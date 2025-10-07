@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "586694196012",
+    "project_id": "apnathekedar-e28a4",
+    "storage_bucket": "apnathekedar-e28a4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586694196012:android:71963486044d61e1ad8a89",
+        "android_client_info": {
+          "package_name": "com.example.apna_thekedar_specialist"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAOC4euEUcrxonHOhAnbgSZyNNSpFGrAHg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
