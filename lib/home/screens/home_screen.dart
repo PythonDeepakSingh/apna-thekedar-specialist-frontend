@@ -10,7 +10,6 @@ import 'package:apna_thekedar_specialist/services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:apna_thekedar_specialist/notifications/notification_screen.dart';
-import 'package:apna_thekedar_specialist/projects/screens/start_project_trigger_screen.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -127,34 +126,20 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
   
+// lib/home/screens/home_screen.dart
+
   void _handleRunningProjectTap() {
     final project = _dashboardData?['latest_running_project'];
     if (project == null) return;
-
-    final status = project['status'];
+    
     final projectId = project['id'];
 
-    // Sahi navigation logic
-    switch (status) {
-      case 'QUOTATION_APPROVED':
-      case 'WAITING_FOR_PHASE_PLAN_APPROVAL':
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ProjectDetailScreen(projectId: projectId),
-        ));
-        break;
-      
-      case 'PHASE_PLAN_APPROVED':
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => StartProjectTriggerScreen(projectId: projectId),
-        ));
-        break;
-
-      default:
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ProjectDetailScreen(projectId: projectId),
-        ));
-    }
+    // Ab har active project ke liye seedha ProjectDetailScreen par jaayenge
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ProjectDetailScreen(projectId: projectId),
+    ));
   }
+
 
   @override
   Widget build(BuildContext context) {

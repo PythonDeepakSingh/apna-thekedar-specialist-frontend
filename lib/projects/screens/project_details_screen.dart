@@ -1,6 +1,8 @@
+// lib/projects/screens/project_details_screen.dart (FINAL & CORRECTED)
+
 import 'dart:convert';
 import 'package:apna_thekedar_specialist/projects/screens/create_phase_plan_screen.dart';
-import 'package:apna_thekedar_specialist/projects/screens/view_phase_plan_screen.dart'; // Naya import
+import 'package:apna_thekedar_specialist/projects/screens/view_phase_plan_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:apna_thekedar_specialist/chat/chat_screen.dart';
@@ -17,6 +19,8 @@ import 'package:iconsax/iconsax.dart';
 import 'package:intl/intl.dart';
 import 'package:apna_thekedar_specialist/projects/screens/quotation_history_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:slide_to_act/slide_to_act.dart';
+import 'dart:ui'; // ImageFilter ke liye zaroori hai
 
 class ProjectDetailScreen extends StatefulWidget {
   final int projectId;
@@ -94,34 +98,46 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Future<void> _launchMaps() async {
     if (_projectDetails == null) return;
-
     final lat = _projectDetails!['latitude'];
     final lng = _projectDetails!['longitude'];
-
     if (lat == null || lng == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Project location is not available.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Project location is not available.')));
       return;
     }
-
-    final Uri googleMapsUrl =
-        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-
+    final Uri googleMapsUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
     if (await canLaunchUrl(googleMapsUrl)) {
       await launchUrl(googleMapsUrl);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Maps.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open Google Maps.')));
     }
+  }
+
+  Future<void> _startWork() async {
+    setState(() => _isLoading = true);
+    try {
+      final response = await _apiService.post('/projects/${widget.projectId}/start-work/', {});
+      if (mounted) {
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Work Started! Good luck.'), backgroundColor: Colors.green));
+          _fetchProjectDetails();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${response.body}")));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("An error occurred: $e")));
+    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    // ===== CORRECTION 1: APPBAR SE DYNAMIC TITLE HATA DIYA GAYA HAI =====
+    String appBarTitle = _projectDetails?['title'] ?? 'Project Details';
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_projectDetails?['title'] ?? 'Project Details'),
+        title: Text(appBarTitle),
         actions: [
           if (_projectDetails != null)
             Builder(
@@ -150,10 +166,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             _buildInfoCard(),
                             _buildTimelineInfo(),
                             const SizedBox(height: 16),
-                            Text("Next Steps",
-                                style: Theme.of(context).textTheme.titleLarge),
                             const SizedBox(height: 8),
                             _buildActionWidget(),
+                            const Divider(height: 40),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Iconsax.message),
+                                label: const Text("Chat with Customer"),
+                                onPressed: () {
+                                  if (_myProfile != null) {
+                                    Navigator.of(context).push(MaterialPageRoute(
+                                        builder: (_) => ChatScreen(
+                                              projectId: widget.projectId,
+                                              customerName: _projectDetails!['customer']?['name'] ?? 'Customer',
+                                              myName: _myProfile!.name,
+                                            )));
+                                  }
+                                },
+                              ),
+                            )
                           ],
                         ),
                       ),
@@ -163,6 +195,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Widget _buildInfoCard() {
     final customer = _projectDetails!['customer'] ?? {};
+    final status = _projectDetails!['status'];
+    final phases = (_projectDetails!['phases'] as List<dynamic>? ?? []);
+    
+    // Yahan current phase dhoondhenge
+    final inProgressPhase = (status == 'WORK_IN_PROGRESS') 
+        ? phases.firstWhere((p) => p['status'] == 'IN_PROGRESS', orElse: () => null) 
+        : null;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
       elevation: 4,
@@ -174,16 +214,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           children: [
             Text(
               _projectDetails!['title'] ?? 'No Title',
-              style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF333333)),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF333333)),
             ),
+            if (inProgressPhase != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Chip(
+                  label: Text(
+                    "Currently in: Phase ${inProgressPhase['phase_number']}",
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  backgroundColor: Colors.teal.shade50,
+                  side: BorderSide(color: Colors.teal.shade200),
+                  avatar: Icon(Iconsax.play_circle, color: Colors.teal.shade800, size: 18),
+                ),
+              ),
             const SizedBox(height: 8),
             Text(
               _projectDetails!['description'] ?? 'No description provided.',
-              style:
-                  TextStyle(fontSize: 16, color: Colors.grey[700], height: 1.5),
+              style: TextStyle(fontSize: 16, color: Colors.grey[700], height: 1.5),
             ),
             const Divider(height: 30),
             Row(
@@ -194,51 +243,39 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Location',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF333333)),
-                      ),
+                      const Text('Location', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF333333))),
                       const SizedBox(height: 4),
                       Text(
                         '${_projectDetails!['address'] ?? ''}, ${_projectDetails!['pincode'] ?? ''}',
-                        style:
-                            const TextStyle(fontSize: 15, color: Colors.black54),
+                        style: const TextStyle(fontSize: 15, color: Colors.black54),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 16),
                 IconButton(
-                  icon: const Icon(Iconsax.direct_right,
-                      color: Colors.blue, size: 28),
-                  onPressed: _launchMaps,
+                  icon: Icon(
+                    Iconsax.direct_right,
+                    // Agar project complete ya cancel ho gaya hai to icon ko grey kar do
+                    color: (status == 'WORK_COMPLETED' || status == 'WORK_CANCELLED') ? Colors.grey : Colors.blue,
+                    size: 28
+                  ),
+                  // Agar project complete ya cancel ho gaya hai to onPressed ko null kar do (button disable ho jaayega)
+                  onPressed: (status == 'WORK_COMPLETED' || status == 'WORK_CANCELLED') ? null : _launchMaps,
                   tooltip: 'Get Directions',
                 ),
               ],
             ),
             const Divider(height: 30),
-            const Text(
-              'Customer Details',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF333333)),
-            ),
+            const Text('Customer Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF333333))),
             const SizedBox(height: 8),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: CircleAvatar(
                 backgroundColor: Colors.brown.shade100,
-                child: Text(customer['name']?[0] ?? 'C',
-                    style: TextStyle(
-                        color: Colors.brown.shade800,
-                        fontWeight: FontWeight.bold)),
+                child: Text(customer['name']?[0] ?? 'C', style: TextStyle(color: Colors.brown.shade800, fontWeight: FontWeight.bold)),
               ),
-              title: Text(customer['name'] ?? 'N/A',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              title: Text(customer['name'] ?? 'N/A', style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(customer['phone_number'] ?? 'N/A'),
             ),
           ],
@@ -253,18 +290,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     try {
       final date = DateTime.parse(dateString).toLocal();
       formattedDate = DateFormat('dd MMM, yyyy').format(date);
-    } catch (e) {
-      /* ignore */
-    }
-
+    } catch (e) { /* ignore */ }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(formattedDate,
-              style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -283,15 +316,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              status == 'WORK_COMPLETED'
-                  ? 'Project Completion Details'
-                  : 'Project Cancellation Details',
+              status == 'WORK_COMPLETED' ? 'Project Completion Details' : 'Project Cancellation Details',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const Divider(height: 20),
             _buildDateRow('Created On', _projectDetails!['created_at']),
-            _buildDateRow(
-                'Connected On', _projectDetails!['specialist_connected_at']),
+            _buildDateRow('Connected On', _projectDetails!['specialist_connected_at']),
             if (status == 'WORK_COMPLETED')
               _buildDateRow('Completed On', _projectDetails!['completed_at']),
             if (status == 'WORK_CANCELLED')
@@ -305,11 +335,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Drawer _buildProjectDrawer() {
     final requirement = _projectDetails!['requirement'];
     final updatesData = (_projectDetails?['progress_updates'] as List?) ?? [];
-    final updates =
-        updatesData.map((data) => ProjectUpdate.fromJson(data)).toList();
+    final updates = updatesData.map((data) => ProjectUpdate.fromJson(data)).toList();
     final status = _projectDetails!['status'];
-    final bool isWorkInProgress = status == 'WORK_IN_PROGRESS';
     final phases = (_projectDetails!['phases'] as List<dynamic>? ?? []);
+    final bool canSpecialistTakeAction = status == 'WORK_IN_PROGRESS' || status == 'PHASE_PLAN_REJECTED';
+    final bool showSecondaryActions = [
+      'WORK_IN_PROGRESS',
+      'PHASE_COMPLETION_PENDING',
+      'PHASE_DONE_WAITING_FOR_NEXT',
+      'WORK_COMPLETION_PENDING',
+      'WORK_COMPLETED',
+      'WORK_CANCELLED'
+    ].contains(status);
 
     return Drawer(
       child: ListView(
@@ -317,11 +354,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         children: [
           const DrawerHeader(
             decoration: BoxDecoration(color: Color(0xFF4B2E1E)),
-            child: Text('Project Options',
-                style: TextStyle(color: Colors.white, fontSize: 24)),
+            child: Text('Project Options', style: TextStyle(color: Colors.white, fontSize: 24)),
           ),
-
-          // Naya Button: Phase Plan ke liye
           if (phases.isNotEmpty)
             ListTile(
               leading: const Icon(Iconsax.task_square, color: Colors.indigo),
@@ -329,19 +363,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ? 'View / Update Phase Plan'
                   : 'View Phase Plan'),
               onTap: () {
-                Navigator.of(context).pop(); // Drawer band karein
-
+                Navigator.of(context).pop();
                 if (status == 'WAITING_FOR_PHASE_PLAN_APPROVAL' || status == 'PHASE_PLAN_REJECTED') {
-                  final approvedQuotation =
-                      (_projectDetails!['quotations'] as List?)?.firstWhere(
-                          (q) => q['status'] == 'APPROVED',
-                          orElse: () => null);
-                  
-                  // === ERROR FIX YAHAN HAI ===
-                  final totalAmount = double.tryParse(
-                          approvedQuotation?['amount'].toString() ?? '0.0') ?? 0.0;
-                  // ==========================
-
+                  final approvedQuotation = (_projectDetails!['quotations'] as List?)?.firstWhere((q) => q['status'] == 'APPROVED', orElse: () => null);
+                  final totalAmount = double.tryParse(approvedQuotation?['amount'].toString() ?? '0.0') ?? 0.0;
                   Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => CreatePhasePlanScreen(
                       projectId: widget.projectId,
@@ -349,28 +374,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       initialPhases: phases,
                     ),
                   )).then((success) {
-                    if (success == true) {
-                      _fetchProjectDetails();
-                    }
+                    if (success == true) _fetchProjectDetails();
                   });
                 } else {
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ViewPhasePlanScreen(phases: phases),
-                  ));
+                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => ViewPhasePlanScreen(phases: phases)));
                 }
               },
             ),
-
           ListTile(
             leading: const Icon(Iconsax.document_text_1),
             title: const Text('View Requirement Details'),
             onTap: () {
               Navigator.of(context).pop();
               if (requirement != null) {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) =>
-                      RequirementDetailViewScreen(requirementData: requirement),
-                ));
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => RequirementDetailViewScreen(requirementData: requirement)));
               }
             },
           ),
@@ -379,9 +396,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             title: const Text('View Update History'),
             onTap: () {
               Navigator.of(context).pop();
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => UpdateHistoryScreen(updates: updates),
-              ));
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => UpdateHistoryScreen(updates: updates)));
             },
           ),
           ListTile(
@@ -389,59 +404,57 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             title: const Text('View Project Timeline'),
             onTap: () {
               Navigator.of(context).pop();
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) =>
-                    ProjectTimelineScreen(projectDetails: _projectDetails!),
-              ));
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectTimelineScreen(projectDetails: _projectDetails!)));
             },
           ),
-          const Divider(),
-          if (isWorkInProgress) ...[
-            ListTile(
-              leading:
-                  const Icon(Iconsax.document_upload, color: Colors.orange),
-              title: const Text('Send New/Updated Quotation'),
-              onTap: () {
-                Navigator.of(context).pop();
-                if (requirement != null) {
-                  Navigator.of(context)
-                      .push(MaterialPageRoute(
-                          builder: (_) => CreateQuotationScreen(
-                                projectId: widget.projectId,
-                                requirementId: requirement['id'],
-                              )))
-                      .then((_) => _fetchProjectDetails());
-                }
-              },
-            ),
+          if (showSecondaryActions) ...[
+            const Divider(),
+            if (canSpecialistTakeAction)
+              ListTile(
+                leading: const Icon(Iconsax.document_upload, color: Colors.orange),
+                title: const Text('Send New/Updated Quotation'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  if (requirement != null) {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => CreateQuotationScreen(
+                              projectId: widget.projectId,
+                              requirementId: requirement['id'],
+                            ))).then((_) => _fetchProjectDetails());
+                  }
+                },
+              ),
             ListTile(
               leading: const Icon(Iconsax.task, color: Colors.teal),
               title: const Text('View Quotation History'),
               onTap: () {
                 Navigator.of(context).pop();
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => QuotationHistoryScreen(
-                    projectId: _projectDetails!['id'],
-                  ),
-                ));
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => QuotationHistoryScreen(projectId: _projectDetails!['id'])));
               },
             ),
-            const Divider(),
           ],
-          if (isWorkInProgress)
-            ListTile(
-              leading: const Icon(Iconsax.task_square, color: Colors.green),
-              title: const Text('Mark Project as Complete'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context)
-                    .push(MaterialPageRoute(
-                  builder: (_) =>
-                      RequestCompletionScreen(projectId: widget.projectId),
-                ))
-                    .then((_) => _fetchProjectDetails());
-              },
-            ),
+          if (canSpecialistTakeAction) ...[
+            const Divider(),
+            Builder(builder: (context) {
+              final inProgressPhase = phases.firstWhere((p) => p['status'] == 'IN_PROGRESS', orElse: () => null);
+              if (inProgressPhase == null) return const SizedBox.shrink();
+              final bool isLastPhase = inProgressPhase['phase_number'] == phases.length;
+              return ListTile(
+                leading: const Icon(Iconsax.task_square, color: Colors.green),
+                title: Text(isLastPhase ? 'Mark Project as Complete' : 'Mark Phase ${inProgressPhase['phase_number']} as Complete'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => RequestCompletionScreen(
+                      projectId: widget.projectId,
+                      phaseId: inProgressPhase['id'],
+                      isLastPhase: isLastPhase,
+                    ),
+                  )).then((_) => _fetchProjectDetails());
+                },
+              );
+            }),
+          ],
         ],
       ),
     );
@@ -449,25 +462,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Widget _buildActionWidget() {
     final status = _projectDetails!['status'];
-    final customerName = _projectDetails!['customer']?['name'] ?? 'Customer';
-    final requirement = _projectDetails!['requirement'] ?? {};
-
-    Widget chatButton() {
-      return OutlinedButton.icon(
-        icon: const Icon(Iconsax.message),
-        label: const Text("Chat with Customer"),
-        onPressed: () {
-          if (_myProfile != null) {
-            Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => ChatScreen(
-                      projectId: widget.projectId,
-                      customerName: customerName,
-                      myName: _myProfile!.name,
-                    )));
-          }
-        },
-      );
-    }
+    final phases = (_projectDetails!['phases'] as List<dynamic>? ?? []);
+    final requirement = _projectDetails!['requirement'] ?? {}; // <-- ERROR 1 FIX
 
     switch (status) {
       case 'SPECIALIST_CONNECTED':
@@ -475,28 +471,24 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            chatButton(),
+            // chatButton() was here, removed to avoid duplication
             const SizedBox(height: 10),
             ElevatedButton.icon(
               icon: const Icon(Iconsax.document_upload),
-              label: Text(status == 'QUOTATION_CANCELLED'
-                  ? 'Send Quotation Again'
-                  : 'Create & Send Quotation'),
+              label: Text(status == 'QUOTATION_CANCELLED' ? 'Send Quotation Again' : 'Create & Send Quotation'),
               onPressed: () {
-                Navigator.of(context)
-                    .push(MaterialPageRoute(
-                        builder: (_) => CreateQuotationScreen(
-                              projectId: widget.projectId,
-                              requirementId: requirement['id'],
-                            )))
-                    .then((_) => _fetchProjectDetails());
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => CreateQuotationScreen(
+                    projectId: widget.projectId,
+                    requirementId: requirement['id'],
+                  ))).then((_) => _fetchProjectDetails());
               },
             ),
           ],
         );
 
       case 'WAITING_QUOTATION_CONFIRMATION':
-        return const Card(
+         return const Card(
           color: Color(0xFFFFF3CD),
           child: ListTile(
             leading: Icon(Iconsax.clock, color: Color(0xFF664D03)),
@@ -506,61 +498,46 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         );
 
       case 'QUOTATION_APPROVED':
-        final approvedQuotation = (_projectDetails!['quotations'] as List?)
-            ?.firstWhere((q) => q['status'] == 'APPROVED', orElse: () => null);
-
-        if (approvedQuotation == null) {
-          return const Card(
-            color: Color.fromRGBO(255, 235, 238, 1),
-            child: ListTile(
-              leading: Icon(Iconsax.warning_2, color: Colors.red),
-              title: Text("Error"),
-              subtitle: Text("Approved quotation details not found."),
-            ),
-          );
-        }
-
-        final totalAmount =
-            double.tryParse(approvedQuotation['amount'].toString()) ?? 0.0;
+        final approvedQuotation = (_projectDetails!['quotations'] as List?)?.firstWhere((q) => q['status'] == 'APPROVED', orElse: () => null);
+        if (approvedQuotation == null) return const Card(child: ListTile(title: Text("Error: Approved quotation not found.")));
+        final totalAmount = double.tryParse(approvedQuotation['amount'].toString()) ?? 0.0;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Card(
-              elevation: 2,
-              color: Colors.teal.shade50,
-              shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12))),
-              child: const ListTile(
+            const Card(
+              elevation: 2, color: Color.fromRGBO(224, 242, 241, 1),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+              child: ListTile(
                 leading: Icon(Iconsax.like_1, color: Colors.teal),
-                title: Text("Quotation Approved!",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle:
-                    Text("Great! Now create a phase-wise plan for the customer."),
+                title: Text("Quotation Approved!", style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text("Great! Now create a phase-wise plan for the customer."),
               ),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
               icon: const Icon(Iconsax.document_upload),
               label: const Text('Create Phase Plan'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
+              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               onPressed: () async {
                 final result = await Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => CreatePhasePlanScreen(
-                    projectId: widget.projectId,
-                    totalAmount: totalAmount,
-                  ),
+                  builder: (_) => CreatePhasePlanScreen(projectId: widget.projectId, totalAmount: totalAmount),
                 ));
-                if (result == true) {
-                  _fetchProjectDetails();
-                }
+                if (result == true) _fetchProjectDetails();
               },
             ),
           ],
+        );
+        
+      case 'PHASE_PLAN_REJECTED':
+        return const Card(
+          elevation: 2, color: Color.fromRGBO(255, 235, 238, 1),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+          child: ListTile(
+            leading: Icon(Iconsax.dislike, color: Colors.red),
+            title: Text("Phase Plan Rejected", style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text("The customer has rejected the plan. Please review and submit it again from the options menu (⋮)."),
+          ),
         );
 
       case 'WAITING_FOR_PHASE_PLAN_APPROVAL':
@@ -573,66 +550,165 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         );
 
-            case 'PHASE_PLAN_REJECTED':
-        return Card(
-          elevation: 2,
-          color: Colors.red.shade50,
-          shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12))),
-          child: const ListTile(
-            leading: Icon(Iconsax.dislike, color: Colors.red),
-            title: Text("Phase Plan Rejected",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle:
-                Text("The customer has rejected the plan. Please review and submit it again from the options menu (⋮)."),
-          ),
-        );  
-      
       case 'PHASE_PLAN_APPROVED':
-        return const Card(
-          color: Color.fromRGBO(227, 242, 253, 1),
-          child: ListTile(
-            leading: Icon(Iconsax.wallet_check, color: Colors.blue),
-            title: Text("Plan Approved, Awaiting Payment"),
-            subtitle: Text("Waiting for customer to pay for the first phase."),
-          ),
-        );
+        final currentPhase = phases.firstWhere((phase) => phase['is_payment_done'] == false, orElse: () => null);
+        if (currentPhase == null) return const Card(child: ListTile(title: Text("All phases seem to be paid.")));
 
-      case 'WORK_IN_PROGRESS':
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ElevatedButton.icon(
-              icon: const Icon(Iconsax.message_add),
-              label: const Text("Send Project Updates"),
-              onPressed: () async {
-                final result = await Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => CreateUpdateScreen(projectId: widget.projectId),
-                ));
-                if (result == true) {
-                  _fetchProjectDetails();
-                }
-              },
+        if (currentPhase['is_payment_done'] == false) {
+          return Card(
+            color: const Color.fromRGBO(227, 242, 253, 1),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Iconsax.wallet_check, color: Colors.blue),
+                    title: Text("Ready for Phase ${currentPhase['phase_number']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text("Waiting for customer to pay for this phase to start the work."),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    icon: const Icon(Iconsax.refresh),
+                    label: const Text("Check Payment Status"),
+                    onPressed: _isLoading ? null : _fetchProjectDetails,
+                  )
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            chatButton(),
-          ],
-        );
+          );
+        } else {
+          return Column(
+            children: [
+              Text(
+                'Payment for Phase ${currentPhase['phase_number']} received! You can start the work now.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              SlideAction(
+                text: 'Slide to Start Work for Phase ${currentPhase['phase_number']}',
+                outerColor: Colors.green,
+                onSubmit: () async { await _startWork(); },
+              ),
+            ],
+          );
+        }
 
-      case 'WORK_COMPLETION_PENDING':
+      case 'PHASE_COMPLETION_PENDING':
         return const Card(
           color: Color(0xFFFFF3CD),
           child: ListTile(
             leading: Icon(Iconsax.clock, color: Color(0xFF664D03)),
+            title: Text("Request Sent"),
+            subtitle: Text("Please wait while the customer accepts your work for this phase."),
+          ),
+        );
+
+      case 'PHASE_DONE_WAITING_FOR_NEXT':
+        // Step 1: Agla phase dhoondho (jiska status abhi bhi PENDING hai)
+        final nextPhase = phases.firstWhere(
+            (phase) => phase['status'] == 'PENDING',
+            orElse: () => null,
+        );
+
+        // Agar koi agla phase nahi hai (matlab project khatam ho gaya hai)
+        if (nextPhase == null) {
+          return const Card(
+            color: Colors.green,
+            child: ListTile(
+              leading: Icon(Iconsax.verify, color: Colors.green),
+              title: Text("All Phases Completed!"),
+              subtitle: Text("You can now mark the entire project as complete from the options menu."),
+            ),
+          );
+        }
+
+        // Step 2: Agle phase ka payment status check karo
+        final bool isNextPhasePaid = nextPhase['is_payment_done'] == true;
+
+        if (isNextPhasePaid) {
+          // AGAR PAYMENT HO GAYI HAI TO: Slider dikhao
+          return Column(
+            children: [
+              Text(
+                'Payment for Phase ${nextPhase['phase_number']} received! You can start the work now for this phase.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              SlideAction(
+                text: 'Slide to Start Work',
+                outerColor: Colors.green,
+                onSubmit: () async { await _startWork(); },
+              ),
+            ],
+          );
+        } else {
+          // AGAR PAYMENT NAHI HUI HAI TO: Payment ka intezaar karne wala card dikhao
+          return Card(
+            color: const Color.fromRGBO(227, 242, 253, 1),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Iconsax.wallet_check, color: Colors.blue),
+                    title: Text(
+                      "Waiting for Payment for Phase ${nextPhase['phase_number']}",
+                      style: const TextStyle(fontWeight: FontWeight.bold)
+                    ),
+                    subtitle: const Text("The previous phase is complete. Waiting for customer to pay for the next phase."),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    icon: const Icon(Iconsax.refresh),
+                    label: const Text("Check Payment Status"),
+                    onPressed: _isLoading ? null : _fetchProjectDetails,
+                  )
+                ],
+              ),
+            ),
+          );
+        }
+      // ============================== NAYA LOGIC YAHAN KHATAM HOTA HAI ==============================
+
+
+      case 'WORK_IN_PROGRESS':
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: InkWell(
+            onTap: () async {
+              final result = await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => CreateUpdateScreen(projectId: widget.projectId),
+              ));
+              if (result == true) {
+                _fetchProjectDetails();
+              }
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: const ListTile(
+              leading: Icon(Iconsax.message_add, color: Colors.blue),
+              title: Text("Send Project Update", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text("Share photos and progress with the customer."),
+              trailing: Icon(Iconsax.arrow_right_3),
+            ),
+          ),
+        );
+
+      case 'WORK_COMPLETION_PENDING':
+         return const Card(
+          color: Color(0xFFFFF3CD),
+          child: ListTile(
+            leading: Icon(Iconsax.clock, color: Color(0xFF664D03)),
             title: Text("Completion Request Sent"),
-            subtitle:
-                Text("Waiting for customer to confirm project completion."),
+            subtitle: Text("Waiting for customer to confirm project completion."),
           ),
         );
 
       case 'WORK_COMPLETED':
         return Card(
-          color: Colors.green.shade50,
+          color: const Color(0xFFE8F5E9),
           child: const ListTile(
             leading: Icon(Iconsax.verify, color: Colors.green),
             title: Text("Project Completed"),
@@ -655,4 +731,3 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 }
-

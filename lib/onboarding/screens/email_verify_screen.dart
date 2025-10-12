@@ -111,6 +111,77 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
     }
   }
 
+  Future<void> _changeEmail(String newEmail) async {
+    setState(() => _isLoading = true);
+    try {
+      // API ENDPOINT KO BADAL KAR NAYA WALA DAALEIN
+      final response = await _apiService.patch('/auth/account/change-email/', {'email': newEmail});
+      
+      if (mounted) {
+        if (response.statusCode == 200) {
+          final responseData = json.decode(response.body);
+          setState(() {
+            _userEmail = responseData['email'];
+            _otpSent = false;
+            _otpController.clear();
+          });
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Email updated! Please verify your new email.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${response.body}')));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+    }
+    setState(() => _isLoading = false);
+  }
+
+  // FUNCTION 2: POPUP DIALOG DIKHANE KE LIYE
+  void _showChangeEmailDialog() {
+    final emailController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Change Email Address'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(hintText: "Enter new email"),
+              validator: (value) {
+                if (value == null || !value.contains('@') || !value.contains('.')) {
+                  return 'Please enter a valid email';
+                }
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  _changeEmail(emailController.text);
+                }
+              },
+              child: const Text('Submit'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,6 +217,11 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
               ),
               const SizedBox(height: 40),
               
+              TextButton(
+                onPressed: _showChangeEmailDialog,
+                child: const Text('Change Email Address?'),
+              ),
+                            
               // OTP input field, jo OTP bhejne ke baad dikhega
               if (_otpSent)
                 TextField(

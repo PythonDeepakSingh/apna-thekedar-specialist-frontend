@@ -59,7 +59,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() { _isLoading = true; });
 
     try {
-      final response = await _apiService.post('/auth/create-user/', {
+      final response = await _apiService.publicPost('/auth/create-user/', {
         'phone_number': widget.phoneNumber,
         'registration_code': widget.registrationCode,
         'name': _nameController.text,
