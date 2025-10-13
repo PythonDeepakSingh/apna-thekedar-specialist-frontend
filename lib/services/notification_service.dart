@@ -1,160 +1,157 @@
+// lib/services/notification_service.dart (FINAL & CORRECTED)
 import 'dart:convert';
-import 'package:apna_thekedar_specialist/chat/chat_screen.dart';
-import 'package:apna_thekedar_specialist/notifications/broadcast_message_screen.dart';
-import 'package:apna_thekedar_specialist/notifications/notification_model.dart';
-import 'package:apna_thekedar_specialist/notifications/notification_screen.dart';
-import 'package:apna_thekedar_specialist/onboarding/screens/select_services_screen.dart';
+import 'package:apna_thekedar_specialist/main.dart';
 import 'package:apna_thekedar_specialist/profile/screens/kyc_screen.dart';
-import 'package:apna_thekedar_specialist/profile/screens/profile_verified_screen.dart';
 import 'package:apna_thekedar_specialist/projects/screens/project_details_screen.dart';
-import 'package:apna_thekedar_specialist/projects/screens/requirement_details_view_screen.dart';
-import 'package:apna_thekedar_specialist/projects/screens/view_phase_plan_screen.dart';
-import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
-import 'package:apna_thekedar_specialist/reviews_feedback_progress/screens/update_history_screen.dart';
+import 'package:apna_thekedar_specialist/projects/screens/requirement_list_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:web_socket_channel/io.dart';
-import 'package:apna_thekedar_specialist/services/auth_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
-  final GlobalKey<NavigatorState> navigatorKey;
-  final NotificationProvider notificationProvider;
-  IOWebSocketChannel? _channel;
-  final AuthService _authService = AuthService();
+  static final NotificationService _instance = NotificationService._internal();
+  factory NotificationService() => _instance;
+  NotificationService._internal();
 
-  NotificationService(this.navigatorKey, this.notificationProvider);
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
-  Future<void> initialize() async {
-    FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
-      if (message != null) {
-        _handleNotificationNavigation(message.data);
-      }
-    });
+  Future<void> init() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
 
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      _handleNotificationNavigation(message.data);
-    });
-
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      notificationProvider.fetchNotifications();
-    });
-  }
-
-  Future<void> connectWebSocket() async {
-    if (_channel != null && _channel?.closeCode == null) return;
-    
-    final token = await _authService.getToken();
-    if (token == null) return;
-
-    final wsUrl = 'wss://apna-thekedar-backend.onrender.com/ws/notifications/?token=$token';
-    
-    try {
-      _channel = IOWebSocketChannel.connect(Uri.parse(wsUrl));
-      _channel?.stream.listen(
-        (message) {
-          notificationProvider.fetchNotifications();
-        },
-        onError: (error) => Future.delayed(Duration(seconds: 5), connectWebSocket),
-        onDone: () => Future.delayed(Duration(seconds: 5), connectWebSocket),
-      );
-    } catch (e) {
-      Future.delayed(Duration(seconds: 5), connectWebSocket);
-    }
-  }
-
-  void handleNotificationClick(NotificationModel notification) {
-    notificationProvider.markAsRead(notification.id);
-    
-    final BuildContext? context = navigatorKey.currentContext;
-    if (context == null) return;
-
-    // Yahan hum NotificationModel se data le rahe hain
-    _navigateToScreen(
-      context,
-      notification.notificationType,
-      notification.relatedProjectId,
-      notification.title,
-      notification.message,
+    await messaging.requestPermission(
+      alert: true, badge: true, sound: true,
     );
+
+    await _createAndroidNotificationChannels();
+
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initializationSettings =
+        InitializationSettings(android: initializationSettingsAndroid);
+    
+    await _localNotifications.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (details) {
+        if (details.payload != null) {
+          handleNotificationTap(json.decode(details.payload!));
+        }
+      },
+    );
+
+    // Jab app foreground mein ho, tab Firebase se notification handle karein
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('Foreground Firebase Message Received: ${message.notification?.title}');
+      showFirebaseNotification(message);
+    });
   }
 
-  void _handleNotificationNavigation(Map<String, dynamic> data) {
-    // Push notification se 'id' aayega, use parse karna zaroori hai
-    final notificationId = int.tryParse(data['id']?.toString() ?? '');
-    if (notificationId != null) {
-      notificationProvider.markAsRead(notificationId);
-    }
+  Future<void> _createAndroidNotificationChannels() async {
+    // Channel 1: Normal notifications ke liye (default sound)
+    const AndroidNotificationChannel defaultChannel = AndroidNotificationChannel(
+      'default_channel', 'General Notifications',
+      description: 'Channel for general app notifications.',
+      importance: Importance.max,
+    );
 
-    final notificationType = data['notification_type']?.toString();
-    final projectIdString = data['related_project_id']?.toString();
-    final projectId = projectIdString != null && projectIdString.isNotEmpty 
-                    ? int.tryParse(projectIdString) 
-                    : null;
-    
-    final title = data['title']?.toString();
-    final message = data['message']?.toString();
+    // Channel 2: Requirement ke liye (custom sound)
+    const AndroidNotificationChannel requirementChannel = AndroidNotificationChannel(
+      'requirement_channel', 'New Requirement Alerts',
+      description: 'Channel for new job alerts with a special sound.',
+      importance: Importance.max,
+      sound: RawResourceAndroidNotificationSound('notification_sound'), // Aapki custom bell
+    );
 
-    final BuildContext? context = navigatorKey.currentContext;
-    if (context == null || notificationType == null) return;
-    
-    _navigateToScreen(context, notificationType, projectId, title, message);
+    final plugin = _localNotifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await plugin?.createNotificationChannel(defaultChannel);
+    await plugin?.createNotificationChannel(requirementChannel);
   }
 
-  void _navigateToScreen(BuildContext context, String type, int? projectId, String? title, String? message) {
-    switch (type) {
-      case 'NEW_REQUIREMENT':
-        if (projectId != null) Navigator.push(context, MaterialPageRoute(builder: (_) => RequirementDetailsViewScreen(requirementId: projectId)));
-        break;
+  // YEH FUNCTION SIRF FIREBASE PUSH NOTIFICATIONS KE LIYE HAI
+  Future<void> showFirebaseNotification(RemoteMessage message) async {
+    RemoteNotification? notification = message.notification;
+    // Backend se aa rahe data ke anusaar channel select karein
+    String channelId = (message.data['notification_type'] == 'NEW_REQUIREMENT')
+        ? 'requirement_channel' // Custom bell wala channel
+        : 'default_channel';    // Normal sound wala channel
 
-      case 'QUOTATION_CONFIRMED':
-      case 'QUOTATION_CANCELLED':
-      case 'PROJECT_CANCELLED':
-      case 'PHASE_PLAN_ACCEPTED':
-      case 'PHASE_PLAN_REJECTED':
-      case 'PHASE_COMPLETION_ACCEPTED':
-      case 'PHASE_COMPLETION_REJECTED':
-        if (projectId != null) Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectDetailsScreen(projectId: projectId)));
-        break;
-      
-      case 'PHASE_PAYMENT_RECEIVED':
-         if (projectId != null) Navigator.push(context, MaterialPageRoute(builder: (_) => ViewPhasePlanScreen(projectId: projectId)));
-        break;
-
-      case 'NEW_SERVICE':
-        Navigator.push(context, MaterialPageRoute(builder: (_) => SelectServicesScreen(isUpdating: true)));
-        break;
-
-      case 'KYC_PENDING':
-        Navigator.push(context, MaterialPageRoute(builder: (_) => KycScreen()));
-        break;
-      
-      case 'PROFILE_VERIFIED':
-        Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileVerifiedScreen()));
-        break;
-
-      case 'BROADCAST_MESSAGE':
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => BroadcastMessageScreen(
-            title: title ?? 'Message',
-            message: message ?? 'You have a new message from Admin.',
+    if (notification != null) {
+      await _localNotifications.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            channelId,
+            channelId == 'requirement_channel' ? 'New Job Alerts' : 'General Notifications',
+            icon: '@mipmap/ic_launcher',
+            priority: Priority.high,
+            importance: Importance.max,
           ),
-        ));
-        break;
-
-      case 'NEW_CHAT_MESSAGE':
-        if (projectId != null) Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(projectId: projectId)));
-        break;
-
-      case 'RATING_GIVEN':
-        if (projectId != null) Navigator.push(context, MaterialPageRoute(builder: (_) => UpdateHistoryScreen(projectId: projectId)));
-        break;
-
-      default:
-        Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationScreen()));
+        ),
+        payload: json.encode(message.data),
+      );
     }
   }
 
-  void disconnect() {
-    _channel?.sink.close();
+  // YEH NAYA FUNCTION SIRF WEBSOCKET SE AAYE LIVE NOTIFICATIONS KE LIYE HAI
+  Future<void> showWebSocketNotification({
+    required int id,
+    required String title,
+    required String body,
+    required String notificationType,
+    String? projectId,
+  }) async {
+     // Yahan bhi wahi logic hai: Sirf NEW_REQUIREMENT par special sound bajega
+     String channelId = (notificationType == 'NEW_REQUIREMENT')
+        ? 'requirement_channel' // Custom bell wala channel
+        : 'default_channel';    // Normal sound wala channel
+    
+    await _localNotifications.show(
+        id,
+        title,
+        body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            channelId,
+            channelId == 'requirement_channel' ? 'New Job Alerts' : 'General Notifications',
+            icon: '@mipmap/ic_launcher',
+            priority: Priority.high,
+            importance: Importance.max,
+          ),
+        ),
+        payload: json.encode({
+          'notification_type': notificationType,
+          'related_project_id': projectId,
+        }),
+      );
+  }
+
+  // Notification par tap hone par yeh function sahi screen par le jaayega
+  void handleNotificationTap(Map<String, dynamic> data) {
+    final String? type = data['notification_type'];
+    final String? projectIdStr = data['related_project_id'];
+
+    if (type == null) return;
+    
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null) {
+        print("Navigator context is null, cannot navigate.");
+        return;
+    }
+
+    if (type == 'NEW_REQUIREMENT') {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementListScreen()));
+    } else if (type == 'KYC_PENDING') {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const KycScreen()));
+    }
+    else if (projectIdStr != null && projectIdStr.isNotEmpty) {
+      final int projectId = int.parse(projectIdStr);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectDetailScreen(projectId: projectId)));
+    }
+  }
+
+  Future<String?> getFCMToken() async {
+    return await FirebaseMessaging.instance.getToken();
   }
 }
