@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'dart:convert';
 import 'package:iconsax/iconsax.dart';
+import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
+import 'package:apna_thekedar_specialist/services/notification_service.dart';
+import 'package:provider/provider.dart';
+
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({super.key});
@@ -80,38 +84,39 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final notificationProvider = Provider.of<NotificationProvider>(context);
+    // NotificationService ko yahan get karein
+    final notificationService = Provider.of<NotificationService>(context, listen: false);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: Text('Notifications'),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              : _notifications.isEmpty
-                  ? const Center(child: Text("You don't have any notifications yet."))
-                  : RefreshIndicator(
-                      onRefresh: _fetchAndMarkRead,
-                      child: ListView.builder(
-                        itemCount: _notifications.length,
-                        itemBuilder: (context, index) {
-                          final notification = _notifications[index];
-                          return ListTile(
-                            leading: Icon(
-                              _getIconForType(notification['notification_type']),
-                              color: notification['is_read'] ? Colors.grey : Theme.of(context).primaryColor,
-                            ),
-                            title: Text(
-                              notification['title'],
-                              style: TextStyle(
-                                fontWeight: notification['is_read'] ? FontWeight.normal : FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Text(notification['message']),
-                          );
+      body: notificationProvider.isLoading
+          ? Center(child: CircularProgressIndicator())
+          : notificationProvider.notifications.isEmpty
+              ? Center(child: Text('No notifications yet.'))
+              : RefreshIndicator(
+                  onRefresh: () => notificationProvider.fetchNotifications(),
+                  child: ListView.builder(
+                    itemCount: notificationProvider.notifications.length,
+                    itemBuilder: (context, index) {
+                      final notification = notificationProvider.notifications[index];
+                      return ListTile(
+                        leading: Icon(
+                          notification.isRead ? Icons.check_circle : Icons.circle,
+                          color: notification.isRead ? Colors.green : Colors.orange,
+                        ),
+                        title: Text(notification.title, style: TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(notification.message),
+                        onTap: () {
+                          // Corrected way to call the navigation logic
+                          notificationService.handleNotificationClick(notification);
                         },
-                      ),
-                    ),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }

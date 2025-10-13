@@ -103,6 +103,7 @@ class _SplashScreenState extends State<SplashScreen> {
       MaterialPageRoute(builder: (context) => targetScreen),
     );
   }
+  
 
   @override
   Widget build(BuildContext context) {

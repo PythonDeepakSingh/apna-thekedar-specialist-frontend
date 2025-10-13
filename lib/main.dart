@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart'; // Provider ko import karein
 import 'package:apna_thekedar_specialist/api/api_service.dart'; // ApiService ko import karein
 import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
+import 'package:provider/provider.dart';
+import 'package:apna_thekedar_specialist/services/auth_service.dart';
+
 
 // YEH HAI HAMARA NAYA "BACKGROUND WATCHMAN" FUNCTION
 // Isse main() function ke bahar, sabse upar likhein
@@ -35,16 +38,19 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<ApiService>(
-          create: (_) => ApiService(AuthService()),
-        ),
-        ChangeNotifierProvider<AuthService>(
+        Provider<AuthService>(
           create: (_) => AuthService(),
         ),
-        // ==================== YEH NAYI LINE ADD KAREIN ====================
+        Provider<ApiService>(
+          create: (context) => ApiService(context.read<AuthService>()),
+        ),
         ChangeNotifierProvider<NotificationProvider>(
           create: (context) => NotificationProvider(context.read<ApiService>()),
         ),
+        // ==================== YEH NAYI LINE ADD KAREIN ====================
+        Provider<NotificationService>(
+          create: (context) => NotificationService(navigatorKey, context.read<NotificationProvider>()),
+        )
       ],
       child: MaterialApp(
         navigatorKey: navigatorKey,
@@ -58,6 +64,7 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+  
 
 
 class MyApp extends StatelessWidget {
