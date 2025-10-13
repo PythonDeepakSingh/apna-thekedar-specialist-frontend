@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart'; // Provider ko import karein
 import 'package:apna_thekedar_specialist/api/api_service.dart'; // ApiService ko import karein
+import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
 
 // YEH HAI HAMARA NAYA "BACKGROUND WATCHMAN" FUNCTION
 // Isse main() function ke bahar, sabse upar likhein
@@ -21,23 +22,41 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 // Yeh Global key humein app ke bahar se navigation control karne mein madad karegi
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-  await NotificationService().init();
+  runApp(const MyApp());
+}
 
-  // ==================== YAHAN BADLAAV KAREIN ====================
-  runApp(
-    MultiProvider(
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
       providers: [
-        // Yeh line ApiService ko poori app ke liye available banati hai
-        Provider<ApiService>(create: (_) => ApiService()),
+        Provider<ApiService>(
+          create: (_) => ApiService(AuthService()),
+        ),
+        ChangeNotifierProvider<AuthService>(
+          create: (_) => AuthService(),
+        ),
+        // ==================== YEH NAYI LINE ADD KAREIN ====================
+        ChangeNotifierProvider<NotificationProvider>(
+          create: (context) => NotificationProvider(context.read<ApiService>()),
+        ),
       ],
-      child: const MyApp(),
-    ),
-  );
-  // ===============================================================
+      child: MaterialApp(
+        navigatorKey: navigatorKey,
+        title: 'Apna Thekedar Specialist',
+        theme: ThemeData(
+          primarySwatch: Colors.orange,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        home: SplashScreen(),
+      ),
+    );
+  }
 }
 
 
