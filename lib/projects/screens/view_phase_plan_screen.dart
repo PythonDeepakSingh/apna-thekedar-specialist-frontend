@@ -53,6 +53,9 @@ class ViewPhasePlanScreen extends StatelessWidget {
 
   Widget _buildPhaseRow(Map<String, dynamic> phase, int index) {
     final checklistItems = phase['checklist_items'] as List<dynamic>? ?? [];
+    // YEH NAYI LINE ADD HUI HAI
+    final bool isPaid = phase['is_payment_done'] ?? false;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
@@ -63,9 +66,23 @@ class ViewPhasePlanScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Phase ${index + 1}',
-              style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Row( // Title aur tick ko ek line mein laane ke liye
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Phase ${index + 1}',
+                  style:
+                      const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              // AGAR PAID HAI TOH TICK DIKHAO
+              if (isPaid)
+                const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green, size: 18),
+                    SizedBox(width: 4),
+                    Text("Paid", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))
+                  ],
+                )
+            ],
+          ),
           const Divider(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -90,7 +107,7 @@ class ViewPhasePlanScreen extends StatelessWidget {
       ),
     );
   }
-  
+   
   Widget _buildInfoChip({required IconData icon, required String label, required String value}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

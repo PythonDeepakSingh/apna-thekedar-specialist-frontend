@@ -1,43 +1,49 @@
-// lib/main.dart (FINAL & CORRECTED CODE)
+import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
+import 'package:apna_thekedar_specialist/services/auth_service.dart';
 import 'package:apna_thekedar_specialist/services/notification_service.dart';
 import 'package:apna_thekedar_specialist/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // Provider ko import karein
-import 'package:apna_thekedar_specialist/api/api_service.dart'; // ApiService ko import karein
+import 'package:provider/provider.dart';
+import 'package:apna_thekedar_specialist/api/api_service.dart';
 
-// YEH HAI HAMARA NAYA "BACKGROUND WATCHMAN" FUNCTION
-// Isse main() function ke bahar, sabse upar likhein
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  // Background mein notification dikhane ke liye service ko call karein
-  // YEH HAI CORRECTED FUNCTION NAME
-  await NotificationService().showFirebaseNotification(message);
   print("Handling a background message: ${message.messageId}");
 }
 
-// Yeh Global key humein app ke bahar se navigation control karne mein madad karegi
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-  await NotificationService().init();
-
-  // ==================== YAHAN BADLAAV KAREIN ====================
+  
   runApp(
     MultiProvider(
       providers: [
-        // Yeh line ApiService ko poori app ke liye available banati hai
+        // Pehle independent providers
         Provider<ApiService>(create: (_) => ApiService()),
+        ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
+        Provider<GlobalKey<NavigatorState>>.value(value: navigatorKey),
+
+        // Ab dependent providers
+        ChangeNotifierProvider<NotificationProvider>(
+          create: (context) => NotificationProvider(context.read<ApiService>()),
+        ),
+        // NotificationService ab dusre providers ko theek se access kar payega
+        Provider<NotificationService>(
+          create: (context) => NotificationService(
+            context.read<GlobalKey<NavigatorState>>(),
+            context.read<NotificationProvider>(),
+          ),
+        ),
       ],
       child: const MyApp(),
     ),
   );
-  // ===============================================================
 }
 
 
@@ -50,7 +56,7 @@ class MyApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'Apna Thekedar Specialist',
-      navigatorKey: navigatorKey, // Navigator key ko yahan set karein
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primaryColor: darkColor,
@@ -90,21 +96,14 @@ class MyApp extends StatelessWidget {
         )
       ),
       home: const SplashScreen(),
-// ==================== YEH RAHA MASTER SOLUTION ====================
-      // 'builder' property poore app ko wrap kar deta hai.
       builder: (context, child) {
         return GestureDetector(
-          // Jab bhi keyboard ke bahar kahin bhi tap hoga...
           onTap: () {
-              
-            // ...toh keyboard ko band kar do.
             FocusScope.of(context).unfocus();
           },
-          // 'child' ka matlab hai aapki current screen (koi bhi screen ho)
           child: child!,
         );
       },
-      // ===============================================================
     );
   }
 }

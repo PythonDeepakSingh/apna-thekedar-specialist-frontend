@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
+import 'package:apna_thekedar_specialist/notifications/notification_model.dart';
 
 class ApiService {
   final String _baseUrl = 'https://apna-thekedar-backend.onrender.com/api/v1';
@@ -263,5 +264,36 @@ Future<http.Response> get(String endpoint) async {
       }
       return request;
     });
+  }
+
+  // --- NAYE FUNCTIONS YAHAN HAIN ---
+  Future<List<NotificationModel>> getNotifications() async {
+    final response = await get('/notifications/');
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(response.body);
+      return data.map((json) => NotificationModel.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load notifications');
+    }
+  }
+
+  Future<void> markNotificationAsRead(List<int> notificationIds) async {
+    await post(
+      '/notifications/mark-as-read/',
+      {'notification_ids': notificationIds},
+    );
+  }
+
+    Future<http.Response> createSupportRequest(int projectId, String problem) {
+    return post(
+      '/support/projects/$projectId/request-support/',
+      {
+        'problem': problem,
+      },
+    );
+  }
+  Future<http.Response> checkForUpdate(String versionCode, String deviceType) {
+    // Yahan hum seedha 'get' ka istemaal kar sakte hain
+    return get('/operations/check-for-update/?version_code=$versionCode&device_type=$deviceType');
   }
 }

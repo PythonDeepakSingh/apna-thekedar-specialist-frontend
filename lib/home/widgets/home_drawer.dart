@@ -46,6 +46,19 @@ class _HomeDrawerState extends State<HomeDrawer> {
     }
   }
 
+   Widget _buildRatingTile(String title, double rating) {
+    return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      leading: Icon(Iconsax.star_1, color: Colors.amber.shade700, size: 20),
+      title: Text(title, style: const TextStyle(fontSize: 14)),
+      trailing: Text(
+        rating.toStringAsFixed(1), // Ek decimal tak dikhayein
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const Color darkColor = Color(0xFF4B2E1E);
@@ -71,8 +84,16 @@ class _HomeDrawerState extends State<HomeDrawer> {
                     ? const Icon(Iconsax.user, color: darkColor)
                     : null,
               ),
+
+
             decoration: const BoxDecoration(color: darkColor),
           ),
+
+                    if (_userProfile != null) ...[
+            _buildRatingTile("Work Rating", _userProfile!.workRating),
+            _buildRatingTile("Behavior Rating", _userProfile!.behaviorRating),
+            const Divider(),
+          ],
           ListTile(
             leading: const Icon(Iconsax.document_upload),
             title: const Text('KYC and Documentation'),

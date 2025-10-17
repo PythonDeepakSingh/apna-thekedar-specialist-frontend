@@ -113,13 +113,19 @@ class _JobListState extends State<JobList> {
           final project = _projects[index];
           final status = project['status'];
 
-          // === NAYA CODE START ===
-          Color cardColor = Colors.white;
+          // === YAHAN BADLAAV KIYA GAYA HAI ===
+          Color cardColor = Colors.white; // Default color
+          
           if (status == 'WORK_COMPLETED') {
             cardColor = Colors.green.shade50;
           } else if (status == 'WORK_CANCELLED') {
             cardColor = Colors.red.shade50;
+          } else if (status == 'WORK_PAUSED') {
+            // Rule 1: Paused project ke liye light yellow color
+            cardColor = Colors.yellow.shade50;
           }
+          // ===================================
+
           return Card(
             color: cardColor,
             margin: const EdgeInsets.only(bottom: 12),

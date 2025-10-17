@@ -1,4 +1,3 @@
-// lib/projects/screens/requirement_list_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
@@ -30,7 +29,7 @@ class _RequirementListScreenState extends State<RequirementListScreen> {
       _error = null;
     });
     try {
-      final response = await _apiService.get('/projects/requirements/');
+      final response = await _apiService.get('/projects/requirements/available/'); // Frontend change
       if (mounted) {
         if (response.statusCode == 200) {
           setState(() {
@@ -87,7 +86,6 @@ class _RequirementListScreenState extends State<RequirementListScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -95,18 +93,39 @@ class _RequirementListScreenState extends State<RequirementListScreen> {
         title: const Text('New Job Requirements'),
         centerTitle: true,
       ),
+      // === YAHAN BADLAAV KIYA GAYA HAI (Background Color) ===
+      backgroundColor: Colors.white,
+      // =======================================================
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text(_error!))
               : _requirements.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Padding(
-                        padding: EdgeInsets.all(24.0),
-                        child: Text(
-                          'No new requirements found in your area right now. We will notify you when a new job is available.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 16),
+                        padding: const EdgeInsets.all(32.0),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // === YAHAN BADLAAV KIYA GAYA HAI (Image Size) ===
+                            Image.asset(
+                              'assets/no_job.png', // Apni image ka naam yahan daalein
+                              width: MediaQuery.of(context).size.width * 0.9, // 90% width
+                            ),
+                            // ===============================================
+                            const SizedBox(height: 24),
+                            const Text(
+                              'No new requirements found in your area right now. We will notify you when a new job is available.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 16, color: Colors.black54),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'अभी आपके क्षेत्र में कोई नया काम उपलब्ध नहीं है। नया काम आने पर आपको सूचित किया जाएगा।',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 16, color: Colors.black54),
+                            ),
+                          ],
                         ),
                       ),
                     )

@@ -21,6 +21,7 @@ import 'package:apna_thekedar_specialist/projects/screens/quotation_history_scre
 import 'package:url_launcher/url_launcher.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'dart:ui'; // ImageFilter ke liye zaroori hai
+import 'package:apna_thekedar_specialist/support/request_assistant_screen.dart'; // YEH NAYA IMPORT ADD KAREIN
 
 class ProjectDetailScreen extends StatefulWidget {
   final int projectId;
@@ -134,6 +135,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget build(BuildContext context) {
     // ===== CORRECTION 1: APPBAR SE DYNAMIC TITLE HATA DIYA GAYA HAI =====
     String appBarTitle = _projectDetails?['title'] ?? 'Project Details';
+    // Project ka current status nikaalein
+    final String? projectStatus = _projectDetails?['status'];
+
+    // Yeh woh statuses hain jinmein chat button nahi dikhna chahiye
+    const List<String> hideChatStatuses = [
+      'WORK_COMPLETED',
+      'WORK_CANCELLED',
+      'WORK_PAUSED'
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -168,30 +178,35 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             const SizedBox(height: 16),
                             const SizedBox(height: 8),
                             _buildActionWidget(),
-                            const Divider(height: 40),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                icon: const Icon(Iconsax.message),
-                                label: const Text("Chat with Customer"),
-                                onPressed: () {
-                                  if (_myProfile != null) {
-                                    Navigator.of(context).push(MaterialPageRoute(
-                                        builder: (_) => ChatScreen(
-                                              projectId: widget.projectId,
-                                              customerName: _projectDetails!['customer']?['name'] ?? 'Customer',
-                                              myName: _myProfile!.name,
-                                            )));
-                                  }
-                                },
+
+                            if (projectStatus != null && !hideChatStatuses.contains(projectStatus)) ...[
+                              const Divider(height: 40),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Iconsax.message),
+                                  label: const Text("Chat with Customer"),
+                                  onPressed: () {
+                                    if (_myProfile != null) {
+                                      Navigator.of(context).push(MaterialPageRoute(
+                                          builder: (_) => ChatScreen(
+                                                projectId: widget.projectId,
+                                                customerName: _projectDetails!['customer']?['name'] ?? 'Customer',
+                                                myName: _myProfile!.name,
+                                              )));
+                                    }
+                                  },
+                                ),
                               ),
-                            )
+                            ],
+                            // =========================================
                           ],
                         ),
                       ),
                     ),
     );
   }
+
 
   Widget _buildInfoCard() {
     final customer = _projectDetails!['customer'] ?? {};
@@ -407,6 +422,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectTimelineScreen(projectDetails: _projectDetails!)));
             },
           ),
+                   // "Call Assistant" button ko if condition se bahar nikaal diya gaya hai
+          const Divider(),
+          ListTile(
+            leading: const Icon(Iconsax.headphone, color: Colors.blue),
+            title: const Text('Call Project Assistant'),
+            onTap: () {
+              Navigator.of(context).pop(); // Pehle drawer band karein
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => RequestAssistantScreen(projectId: widget.projectId),
+              ));
+            },
+          ),
+          const Divider(),
           if (showSecondaryActions) ...[
             const Divider(),
             if (canSpecialistTakeAction)
@@ -432,6 +460,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => QuotationHistoryScreen(projectId: _projectDetails!['id'])));
               },
             ),
+
+
           ],
           if (canSpecialistTakeAction) ...[
             const Divider(),

@@ -1,10 +1,12 @@
 // lib/services/auth_service.dart
 
+import 'package:flutter/material.dart'; // YEH NAYI LINE ADD KAREIN
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 
-class AuthService {
+// 'with ChangeNotifier' YAHAN ADD KAREIN
+class AuthService with ChangeNotifier {
   final ApiService _apiService = ApiService();
 
   Future<String> getUserStatus() async {
@@ -34,27 +36,21 @@ class AuthService {
         
         if (profileResponse.statusCode == 200) {
           final profileData = json.decode(profileResponse.body);
-
-          // ==================== YAHAN PAR HAI ASLI FIX ====================
-          // Check karo ki specialist ka koi address hai ya nahi.
-          // Agar address list khaali hai, to matlab profile abhi banani hai.
+          
           final addresses = profileData['addresses'] as List?;
           if (addresses == null || addresses.isEmpty) {
             return 'NEEDS_PROFILE_CREATION';
           }
-          // ===============================================================
-
+          
           final skills = profileData['long_skills'] as List;
           if (skills.isEmpty) {
             return 'NEEDS_SERVICE_SELECTION';
           }
           return 'LOGGED_IN';
         } else {
-           // Agar profile hai hi nahi, to bhi profile banani hai
            return 'NEEDS_PROFILE_CREATION';
         }
       } catch (e) {
-        // Agar profile fetch karne mein koi error aaye, to bhi profile banani hai
         return 'NEEDS_PROFILE_CREATION';
       }
 

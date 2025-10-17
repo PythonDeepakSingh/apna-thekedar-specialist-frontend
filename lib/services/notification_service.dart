@@ -1,157 +1,181 @@
-// lib/services/notification_service.dart (FINAL & CORRECTED)
+// lib/services/notification_service.dart
 import 'dart:convert';
-import 'package:apna_thekedar_specialist/main.dart';
+import 'package:apna_thekedar_specialist/api/api_service.dart';
+import 'package:apna_thekedar_specialist/chat/chat_screen.dart';
+import 'package:apna_thekedar_specialist/core/models/user_profile.dart';
+import 'package:apna_thekedar_specialist/notifications/broadcast_message_screen.dart';
+import 'package:apna_thekedar_specialist/notifications/notification_model.dart';
+import 'package:apna_thekedar_specialist/notifications/notification_screen.dart';
+import 'package:apna_thekedar_specialist/onboarding/screens/select_services_screen.dart';
 import 'package:apna_thekedar_specialist/profile/screens/kyc_screen.dart';
+import 'package:apna_thekedar_specialist/profile/screens/profile_verified_screen.dart';
 import 'package:apna_thekedar_specialist/projects/screens/project_details_screen.dart';
-import 'package:apna_thekedar_specialist/projects/screens/requirement_list_screen.dart';
+import 'package:apna_thekedar_specialist/projects/screens/requirement_details_view_screen.dart';
+import 'package:apna_thekedar_specialist/projects/screens/view_phase_plan_screen.dart';
+import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
+import 'package:apna_thekedar_specialist/reviews_feedback_progress/models/project_update.dart';
+import 'package:apna_thekedar_specialist/reviews_feedback_progress/screens/update_history_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:provider/provider.dart';
+import 'package:web_socket_channel/io.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
-  static final NotificationService _instance = NotificationService._internal();
-  factory NotificationService() => _instance;
-  NotificationService._internal();
+  final GlobalKey<NavigatorState> navigatorKey;
+  final NotificationProvider notificationProvider;
+  IOWebSocketChannel? _channel;
 
-  final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
+  NotificationService(this.navigatorKey, this.notificationProvider);
 
-  Future<void> init() async {
-    FirebaseMessaging messaging = FirebaseMessaging.instance;
+  Future<void> initialize() async {
+    FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+      if (message != null) _handlePushNotificationNavigation(message.data);
+    });
 
-    await messaging.requestPermission(
-      alert: true, badge: true, sound: true,
-    );
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      _handlePushNotificationNavigation(message.data);
+    });
 
-    await _createAndroidNotificationChannels();
-
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    const InitializationSettings initializationSettings =
-        InitializationSettings(android: initializationSettingsAndroid);
-    
-    await _localNotifications.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: (details) {
-        if (details.payload != null) {
-          handleNotificationTap(json.decode(details.payload!));
-        }
-      },
-    );
-
-    // Jab app foreground mein ho, tab Firebase se notification handle karein
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('Foreground Firebase Message Received: ${message.notification?.title}');
-      showFirebaseNotification(message);
+      // Jab app khula ho aur notification aaye, to list refresh karein
+      notificationProvider.fetchNotifications();
     });
   }
 
-  Future<void> _createAndroidNotificationChannels() async {
-    // Channel 1: Normal notifications ke liye (default sound)
-    const AndroidNotificationChannel defaultChannel = AndroidNotificationChannel(
-      'default_channel', 'General Notifications',
-      description: 'Channel for general app notifications.',
-      importance: Importance.max,
+  Future<void> connectWebSocket() async {
+    if (_channel != null && _channel?.closeCode == null) return;
+    
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('accessToken');
+
+    if (token == null) return;
+    final wsUrl = 'wss://apna-thekedar-backend.onrender.com/ws/notifications/?token=$token';
+    
+    try {
+      _channel = IOWebSocketChannel.connect(Uri.parse(wsUrl));
+      _channel?.stream.listen(
+        (message) => notificationProvider.fetchNotifications(),
+        onError: (error) => Future.delayed(const Duration(seconds: 5), connectWebSocket),
+        onDone: () => Future.delayed(const Duration(seconds: 5), connectWebSocket),
+      );
+    } catch (e) {
+      Future.delayed(const Duration(seconds: 5), connectWebSocket);
+    }
+  }
+  
+  void _handlePushNotificationNavigation(Map<String, dynamic> data) {
+    // Push notification ke data se ek temporary model banayein
+    final tempNotification = NotificationModel.fromJson(data);
+    handleNotificationClick(tempNotification);
+  }
+
+  // YEH CENTRAL FUNCTION HAI JO HAR JAGAH SE CALL HOGA
+  Future<void> handleNotificationClick(NotificationModel notification) async {
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+
+    // Loading indicator dikhayein
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => const Center(child: CircularProgressIndicator()),
     );
 
-    // Channel 2: Requirement ke liye (custom sound)
-    const AndroidNotificationChannel requirementChannel = AndroidNotificationChannel(
-      'requirement_channel', 'New Requirement Alerts',
-      description: 'Channel for new job alerts with a special sound.',
-      importance: Importance.max,
-      sound: RawResourceAndroidNotificationSound('notification_sound'), // Aapki custom bell
-    );
-
-    final plugin = _localNotifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    await plugin?.createNotificationChannel(defaultChannel);
-    await plugin?.createNotificationChannel(requirementChannel);
-  }
-
-  // YEH FUNCTION SIRF FIREBASE PUSH NOTIFICATIONS KE LIYE HAI
-  Future<void> showFirebaseNotification(RemoteMessage message) async {
-    RemoteNotification? notification = message.notification;
-    // Backend se aa rahe data ke anusaar channel select karein
-    String channelId = (message.data['notification_type'] == 'NEW_REQUIREMENT')
-        ? 'requirement_channel' // Custom bell wala channel
-        : 'default_channel';    // Normal sound wala channel
-
-    if (notification != null) {
-      await _localNotifications.show(
-        notification.hashCode,
-        notification.title,
-        notification.body,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            channelId,
-            channelId == 'requirement_channel' ? 'New Job Alerts' : 'General Notifications',
-            icon: '@mipmap/ic_launcher',
-            priority: Priority.high,
-            importance: Importance.max,
-          ),
-        ),
-        payload: json.encode(message.data),
-      );
-    }
-  }
-
-  // YEH NAYA FUNCTION SIRF WEBSOCKET SE AAYE LIVE NOTIFICATIONS KE LIYE HAI
-  Future<void> showWebSocketNotification({
-    required int id,
-    required String title,
-    required String body,
-    required String notificationType,
-    String? projectId,
-  }) async {
-     // Yahan bhi wahi logic hai: Sirf NEW_REQUIREMENT par special sound bajega
-     String channelId = (notificationType == 'NEW_REQUIREMENT')
-        ? 'requirement_channel' // Custom bell wala channel
-        : 'default_channel';    // Normal sound wala channel
+    // Notification ko read mark karein
+    await notificationProvider.markAsRead(notification.id);
     
-    await _localNotifications.show(
-        id,
-        title,
-        body,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            channelId,
-            channelId == 'requirement_channel' ? 'New Job Alerts' : 'General Notifications',
-            icon: '@mipmap/ic_launcher',
-            priority: Priority.high,
-            importance: Importance.max,
-          ),
-        ),
-        payload: json.encode({
-          'notification_type': notificationType,
-          'related_project_id': projectId,
-        }),
-      );
+    // API call ke liye ApiService ka instance lein
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    try {
+      switch (notification.notificationType) {
+        case 'NEW_REQUIREMENT':
+          if (notification.relatedProjectId != null) {
+            // Requirement details fetch karke screen par bhejein
+            final reqData = await apiService.get('/projects/requirements/${notification.relatedProjectId}/');
+            Navigator.pop(context); // Loading indicator hatayein
+            Navigator.push(context, MaterialPageRoute(builder: (_) => RequirementDetailViewScreen(requirementData: json.decode(reqData.body))));
+          }
+          break;
+
+        case 'QUOTATION_CONFIRMED':
+        case 'QUOTATION_CANCELLED':
+        case 'PROJECT_CANCELLED':
+        case 'PHASE_PLAN_ACCEPTED':
+        case 'PHASE_PLAN_REJECTED':
+        case 'PHASE_COMPLETION_ACCEPTED':
+        case 'PHASE_COMPLETION_REJECTED':
+          if (notification.relatedProjectId != null) {
+            Navigator.pop(context); // Loading indicator hatayein
+            Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectDetailScreen(projectId: notification.relatedProjectId!)));
+          }
+          break;
+        
+        case 'PHASE_PAYMENT_RECEIVED':
+          if (notification.relatedProjectId != null) {
+            final projectData = await apiService.get('/projects/${notification.relatedProjectId}/details/');
+            final phases = json.decode(projectData.body)['phases'];
+            Navigator.pop(context); // Loading indicator hatayein
+            Navigator.push(context, MaterialPageRoute(builder: (_) => ViewPhasePlanScreen(phases: phases)));
+          }
+          break;
+
+        case 'NEW_SERVICE':
+          Navigator.pop(context); // Loading indicator hatayein
+          Navigator.push(context, MaterialPageRoute(builder: (_) => SelectServicesScreen(isUpdating: true)));
+          break;
+
+        case 'KYC_PENDING':
+          Navigator.pop(context); // Loading indicator hatayein
+          Navigator.push(context, MaterialPageRoute(builder: (_) => KycScreen()));
+          break;
+        
+        case 'PROFILE_VERIFIED':
+          Navigator.pop(context); // Loading indicator hatayein
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileVerifiedScreen()));
+          break;
+
+        case 'BROADCAST_MESSAGE':
+          Navigator.pop(context); // Loading indicator hatayein
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => BroadcastMessageScreen(title: notification.title, message: notification.message),
+          ));
+          break;
+
+        case 'NEW_CHAT_MESSAGE':
+          if (notification.relatedProjectId != null) {
+            final projectData = await apiService.get('/projects/${notification.relatedProjectId}/details/');
+            final profile = await UserProfile.loadFromApi();
+            Navigator.pop(context); // Loading indicator hatayein
+            Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(
+              projectId: notification.relatedProjectId!,
+              customerName: json.decode(projectData.body)['customer']['name'] ?? 'Customer',
+              myName: profile?.name ?? 'Me',
+            )));
+          }
+          break;
+
+        case 'RATING_GIVEN':
+          if (notification.relatedProjectId != null) {
+            final updatesData = await apiService.get('/feedback/projects/${notification.relatedProjectId}/updates/');
+            final updates = (json.decode(updatesData.body) as List).map((data) => ProjectUpdate.fromJson(data)).toList();
+            Navigator.pop(context); // Loading indicator hatayein
+            Navigator.push(context, MaterialPageRoute(builder: (_) => UpdateHistoryScreen(updates: updates)));
+          }
+          break;
+
+        default:
+          Navigator.pop(context); // Loading indicator hatayein
+          Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationScreen()));
+      }
+    } catch (e) {
+      Navigator.pop(context); // Error aane par bhi loading indicator hatayein
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not load details: $e')));
+    }
   }
 
-  // Notification par tap hone par yeh function sahi screen par le jaayega
-  void handleNotificationTap(Map<String, dynamic> data) {
-    final String? type = data['notification_type'];
-    final String? projectIdStr = data['related_project_id'];
-
-    if (type == null) return;
-    
-    final BuildContext? context = navigatorKey.currentContext;
-    if (context == null) {
-        print("Navigator context is null, cannot navigate.");
-        return;
-    }
-
-    if (type == 'NEW_REQUIREMENT') {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementListScreen()));
-    } else if (type == 'KYC_PENDING') {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const KycScreen()));
-    }
-    else if (projectIdStr != null && projectIdStr.isNotEmpty) {
-      final int projectId = int.parse(projectIdStr);
-      Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectDetailScreen(projectId: projectId)));
-    }
-  }
-
-  Future<String?> getFCMToken() async {
-    return await FirebaseMessaging.instance.getToken();
+  void disconnect() {
+    _channel?.sink.close();
   }
 }

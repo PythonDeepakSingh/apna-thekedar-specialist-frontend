@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'dart:convert';
 import 'package:iconsax/iconsax.dart';
+import 'package:flutter/material.dart';
+import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
+import 'package:apna_thekedar_specialist/services/notification_service.dart';
+import 'package:provider/provider.dart';
+import 'package:iconsax/iconsax.dart';
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({super.key});
@@ -59,59 +64,55 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   // Har notification type ke liye alag icon
-  IconData _getIconForType(String type) {
-    switch (type) {
-      case 'NEW_REQUIREMENT':
-        return Iconsax.document_download;
-      case 'NEW_CHAT_MESSAGE':
-        return Iconsax.message;
-      case 'QUOTATION_CONFIRMED':
-        return Iconsax.like_1;
-      case 'QUOTATION_CANCELLED':
-        return Iconsax.dislike;
-      case 'RATING_GIVEN':
-        return Iconsax.star;
-      case 'PROJECT_CANCELLED':
-        return Iconsax.close_circle;
-      default:
-        return Iconsax.notification;
-    }
-  }
-
+  @override
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notifications'),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              : _notifications.isEmpty
+    // Data ab provider se aayega
+    return Consumer<NotificationProvider>(
+      builder: (context, provider, child) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Notifications'),
+            actions: [
+              IconButton(
+                icon: const Icon(Iconsax.refresh),
+                onPressed: () => provider.fetchNotifications(),
+              )
+            ],
+          ),
+          body: provider.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : provider.notifications.isEmpty
                   ? const Center(child: Text("You don't have any notifications yet."))
                   : RefreshIndicator(
-                      onRefresh: _fetchAndMarkRead,
+                      onRefresh: () => provider.fetchNotifications(),
                       child: ListView.builder(
-                        itemCount: _notifications.length,
+                        itemCount: provider.notifications.length,
                         itemBuilder: (context, index) {
-                          final notification = _notifications[index];
+                          final notification = provider.notifications[index];
                           return ListTile(
-                            leading: Icon(
-                              _getIconForType(notification['notification_type']),
-                              color: notification['is_read'] ? Colors.grey : Theme.of(context).primaryColor,
-                            ),
+                            // Yahan se 'leading' icon hata diya gaya hai
                             title: Text(
-                              notification['title'],
+                              notification.title,
                               style: TextStyle(
-                                fontWeight: notification['is_read'] ? FontWeight.normal : FontWeight.bold,
+                                fontWeight: notification.isRead ? FontWeight.normal : FontWeight.bold,
                               ),
                             ),
-                            subtitle: Text(notification['message']),
+                            subtitle: Text(notification.message),
+                            // Green tick waise hi rahega
+                            trailing: notification.isRead
+                                ? const Icon(Icons.check_circle, color: Colors.green, size: 20)
+                                : null,
+                            onTap: () {
+                              // Click karne par navigation waise hi kaam karega
+                              Provider.of<NotificationService>(context, listen: false).handleNotificationClick(notification);
+                            },
                           );
                         },
                       ),
                     ),
+        );
+      },
     );
   }
 }
