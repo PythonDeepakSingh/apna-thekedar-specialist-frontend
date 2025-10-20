@@ -37,7 +37,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
   Map<String, dynamic>? _projectDetails;
-  String? _error;
   UserProfile? _myProfile;
 
   @override
@@ -59,7 +58,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
-      _error = null;
     });
     try {
       final responses = await Future.wait([
@@ -76,17 +74,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             _projectDetails = json.decode(projectResponse.body);
             _myProfile = profile;
           });
-        } else {
-          setState(() {
-            _error = "Failed to load project details.";
-          });
-        }
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = "An error occurred: $e";
-        });
       }
     } finally {
       if (mounted) {
@@ -161,8 +149,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       endDrawer: _projectDetails != null ? _buildProjectDrawer() : null,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
               : _projectDetails == null
                   ? const Center(child: Text("Project not found."))
                   : RefreshIndicator(

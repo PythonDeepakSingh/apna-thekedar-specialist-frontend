@@ -1,9 +1,11 @@
-// lib/projects/screens/my_jobs_screen.dart (Naya, 2-Tab Version)
+// lib/projects/screens/my_jobs_screen.dart (Updated with Attractive Error Handling)
 import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'dart:convert';
+import 'dart:io'; // Internet check karne ke liye
 import 'package:iconsax/iconsax.dart';
 import 'package:apna_thekedar_specialist/projects/screens/project_details_screen.dart';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart'; // Naya widget import karein
 
 class MyJobsScreen extends StatefulWidget {
   const MyJobsScreen({super.key});
@@ -18,7 +20,6 @@ class _MyJobsScreenState extends State<MyJobsScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    // Ab humare paas sirf 2 tabs hain
     _tabController = TabController(length: 2, vsync: this);
   }
 
@@ -33,7 +34,6 @@ class _MyJobsScreenState extends State<MyJobsScreen> with SingleTickerProviderSt
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Jobs'),
-        // TabBar ko naye tabs ke saath update kiya gaya hai
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -42,11 +42,10 @@ class _MyJobsScreenState extends State<MyJobsScreen> with SingleTickerProviderSt
           ],
         ),
       ),
-      // TabBarView ko bhi naye tabs ke anusaar update kiya gaya hai
       body: TabBarView(
         controller: _tabController,
         children: const [
-          JobList(category: 'active'), // 'running' aur 'pending' ki jagah 'active'
+          JobList(category: 'active'),
           JobList(category: 'historical'),
         ],
       ),
@@ -54,7 +53,8 @@ class _MyJobsScreenState extends State<MyJobsScreen> with SingleTickerProviderSt
   }
 }
 
-// JobList widget mein koi badlaav nahi karna hai, woh waisa hi rahega
+// === JobList WIDGET KO NEECHE DIYE GAYE CODE SE REPLACE KAREIN ===
+
 class JobList extends StatefulWidget {
   final String category;
   const JobList({super.key, required this.category});
@@ -67,7 +67,7 @@ class _JobListState extends State<JobList> {
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
   List<dynamic> _projects = [];
-  String? _error;
+  String? _errorType; // Ab hum error ka type store karenge
 
   @override
   void initState() {
@@ -76,33 +76,79 @@ class _JobListState extends State<JobList> {
   }
 
   Future<void> _fetchJobs() async {
-    setState(() { _isLoading = true; });
+    setState(() {
+      _isLoading = true;
+      _errorType = null;
+    });
+
     try {
+      // Step 1: Internet check karein
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw 'no_internet';
+      }
+
+      // Step 2: API call karein
       final response = await _apiService.get('/projects/my-jobs/?category=${widget.category}');
+
       if (mounted) {
         if (response.statusCode == 200) {
           setState(() {
             _projects = json.decode(response.body);
-            _isLoading = false;
           });
         } else {
-          _error = "Failed to load jobs.";
-          setState(() => _isLoading = false);
+          throw 'server_error';
         }
       }
+    } on SocketException catch (_) {
+      _errorType = 'no_internet';
     } catch (e) {
-       if (mounted) {
-         _error = "An error occurred: $e";
-         setState(() => _isLoading = false);
-       }
+      if (mounted) {
+        _errorType = e.toString() == 'server_error' ? 'server_error' : 'unknown';
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) return Center(child: Text(_error!));
-    if (_projects.isEmpty) return const Center(child: Text("No projects found in this category."));
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorType != null) {
+      if (_errorType == 'no_internet') {
+        return AttractiveErrorWidget(
+          imagePath: 'assets/no_internet.png', // Aapki cartoon image
+          title: "Oops! No Internet",
+          message: "Lagta hai aapka internet band hai. Please check karke dobara try karein.",
+          buttonText: "Dobara Try Karein",
+          onRetry: _fetchJobs,
+        );
+      } else {
+        return AttractiveErrorWidget(
+          imagePath: 'assets/server_error.png', // Server error ke liye image
+          title: "Something Went Wrong",
+          message: "Humare server se connect nahi ho pa raha hai. Please thodi der baad try karein.",
+          buttonText: "Retry",
+          onRetry: _fetchJobs,
+        );
+      }
+    }
+
+    if (_projects.isEmpty) {
+      return AttractiveErrorWidget(
+        imagePath: 'assets/no_jobs.png', // Khaali list ke liye image
+        title: "No Jobs Found",
+        message: "Is category mein abhi koi jobs nahi hain. Nayi jobs yahan dikhengi.",
+        buttonText: "Refresh",
+        onRetry: _fetchJobs,
+      );
+    }
 
     return RefreshIndicator(
       onRefresh: _fetchJobs,
@@ -113,18 +159,15 @@ class _JobListState extends State<JobList> {
           final project = _projects[index];
           final status = project['status'];
 
-          // === YAHAN BADLAAV KIYA GAYA HAI ===
-          Color cardColor = Colors.white; // Default color
+          Color cardColor = Colors.white; 
           
           if (status == 'WORK_COMPLETED') {
             cardColor = Colors.green.shade50;
           } else if (status == 'WORK_CANCELLED') {
             cardColor = Colors.red.shade50;
           } else if (status == 'WORK_PAUSED') {
-            // Rule 1: Paused project ke liye light yellow color
             cardColor = Colors.yellow.shade50;
           }
-          // ===================================
 
           return Card(
             color: cardColor,
@@ -137,12 +180,17 @@ class _JobListState extends State<JobList> {
                 await Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => ProjectDetailScreen(projectId: project['id'])
                 ));
-                _fetchJobs(); // Wapas aane par list refresh karein
+                _fetchJobs();
               },
             ),
           );
         },
       ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _buildBody();
   }
 }

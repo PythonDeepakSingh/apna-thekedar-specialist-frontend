@@ -115,19 +115,20 @@ class _MiscellaneousDocumentScreenState
         files: files,
       );
 
-      if (mounted) {
-        if (response.statusCode == 201) {
+if (mounted) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Document uploaded successfully!')),
           );
-          // Dono pichli screens (address proof aur misc doc) ko band karke KYC screen par jao
-          Navigator.of(context).popUntil((route) => route.isFirst);
+          Navigator.of(context).pop(true);
         } else {
+          // Error aane par response body bhi dikhayein
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error: ${response.body}')),
           );
         }
       }
+      
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

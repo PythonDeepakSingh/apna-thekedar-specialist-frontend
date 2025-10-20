@@ -1,9 +1,11 @@
+// In imports ko file ke sabse upar rakhein
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    // Google Services plugin must be LAST
     id("com.google.gms.google-services")
 }
 
@@ -15,7 +17,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-        // ✅ Required for flutter_local_notifications
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -23,17 +24,36 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    // === YAHAN BADLAAV KIYA GAYA HAI ===
+    // Dono defaultConfig ko ek mein milaya gaya hai
     defaultConfig {
-        applicationId = "com.example.apna_thekedar_specialist"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        applicationId = "com.apnathekedar.specialist" // Aapki unique ID
+        minSdk = 21
+        targetSdk = 34
+        versionCode = 1      // Pehla version
+        versionName = "1.0.0"  // User ko dikhega
+    }
+    // ===================================
+
+    // signingConfigs block ko android { ... } ke andar hona chahiye
+    signingConfigs {
+        create("release") {
+            val keyProperties = Properties() // "java.util." hata diya gaya hai
+            val keyPropertiesFile = rootProject.file("key.properties")
+            if (keyPropertiesFile.exists()) {
+                keyProperties.load(FileInputStream(keyPropertiesFile)) // "java.io." hata diya gaya hai
+            }
+
+            keyAlias = keyProperties["keyAlias"] as String
+            keyPassword = keyProperties["keyPassword"] as String
+            storeFile = file(keyProperties["storeFile"] as String)
+            storePassword = keyProperties["storePassword"] as String
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -43,10 +63,7 @@ flutter {
 }
 
 dependencies {
-    // Firebase BoM (Bill of Materials) to keep versions aligned
     implementation(platform("com.google.firebase:firebase-bom:32.3.1"))
-
-    // Add Firebase services as needed (latest versions handled by BOM)
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")

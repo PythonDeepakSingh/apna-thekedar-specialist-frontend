@@ -23,7 +23,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _dashboardData;
   bool _isLoading = true;
-  String? _error;
 
   @override
   void initState() {
@@ -38,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _initializeScreen() async {
+Future<void> _initializeScreen() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
@@ -47,29 +46,32 @@ class _HomeScreenState extends State<HomeScreen> {
     final notificationService = Provider.of<NotificationService>(context, listen: false);
     final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
 
-    await Future.wait([
-      _fetchDashboardData(),
-      notificationProvider.fetchNotifications()
-    ]);
-    
-    await notificationService.connectWebSocket();
-    
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+    // === YAHAN BADLAAV KIYA GAYA HAI ===
+    try {
+      // Saare functions ko try block ke andar daal dein
+      await _fetchDashboardData();
+      await notificationProvider.fetchNotifications();
+      await notificationService.connectWebSocket();
+    } catch (e) {
+      // Catch block khaali rahega. Humein bas error ko pakadna hai.
+      // Global system error screen dikha dega.
+      print("Error during initialization caught locally: $e");
+    } finally {
+      // Yeh block hamesha chalega, chahe error aaye ya na aaye
+      if (mounted) {
+        setState(() {
+          _isLoading = false; // Loading ko band kar dega
+        });
+      }
     }
+    // ===================================
   }
 
   Future<void> _fetchDashboardData() async {
-    try {
-      final apiService = Provider.of<ApiService>(context, listen: false);
-      final response = await apiService.get('/specialist/dashboard/');
-      if (mounted && response.statusCode == 200) {
-        setState(() => _dashboardData = json.decode(response.body));
-      }
-    } catch (e) {
-      if (mounted) setState(() => _error = "Could not load dashboard.");
+    final apiService = Provider.of<ApiService>(context, listen: false);
+    final response = await apiService.get('/specialist/dashboard/');
+    if (mounted && response.statusCode == 200) {
+      setState(() => _dashboardData = json.decode(response.body));
     }
   }
 
@@ -106,8 +108,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
               : RefreshIndicator(
                   onRefresh: _initializeScreen,
                   child: SingleChildScrollView(

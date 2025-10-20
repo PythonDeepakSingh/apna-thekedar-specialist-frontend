@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/reviews_feedback_progress/models/project_update.dart';
 import 'package:iconsax/iconsax.dart';
+import 'package:apna_thekedar_specialist/core/widgets/full_screen_image_viewer.dart';
 
 class UpdateHistoryScreen extends StatelessWidget {
   final List<ProjectUpdate> updates;
@@ -36,7 +37,7 @@ class UpdateHistoryScreen extends StatelessWidget {
             const Divider(),
             Text(update.updateText, style: const TextStyle(fontSize: 16)),
             const SizedBox(height: 12),
-            if (update.images.isNotEmpty) _buildImageRow(update.images),
+            if (update.images.isNotEmpty) _buildImageRow(context, update.images),
             const Divider(),
             _buildRatingSection(context, update.review),
           ],
@@ -45,7 +46,7 @@ class UpdateHistoryScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildImageRow(List<UpdateImage> images) {
+Widget _buildImageRow(BuildContext context, List<UpdateImage> images) {
     return SizedBox(
       height: 80,
       child: ListView.builder(
@@ -55,16 +56,27 @@ class UpdateHistoryScreen extends StatelessWidget {
           final image = images[index];
           return Padding(
             padding: const EdgeInsets.only(right: 8.0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(image.imageUrl, width: 80, height: 80, fit: BoxFit.cover),
+            child: GestureDetector( // Image ko GestureDetector se wrap karein
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FullScreenImageViewer(imageUrl: image.imageUrl),
+                  ),
+                );
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(image.imageUrl, width: 80, height: 80, fit: BoxFit.cover),
+              ),
             ),
           );
         },
       ),
     );
   }
-  
+
+
   Widget _buildRatingSection(BuildContext context, Map<String, dynamic>? review) {
     if (review == null) {
       return const ListTile(

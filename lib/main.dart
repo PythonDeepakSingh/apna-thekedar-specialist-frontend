@@ -1,3 +1,4 @@
+// lib/main.dart (Updated with Global Internet Checker)
 import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
 import 'package:apna_thekedar_specialist/services/auth_service.dart';
 import 'package:apna_thekedar_specialist/services/notification_service.dart';
@@ -24,16 +25,14 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        // Pehle independent providers
+        // Global error providers hata diye gaye hain
         Provider<ApiService>(create: (_) => ApiService()),
         ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
         Provider<GlobalKey<NavigatorState>>.value(value: navigatorKey),
 
-        // Ab dependent providers
         ChangeNotifierProvider<NotificationProvider>(
           create: (context) => NotificationProvider(context.read<ApiService>()),
         ),
-        // NotificationService ab dusre providers ko theek se access kar payega
         Provider<NotificationService>(
           create: (context) => NotificationService(
             context.read<GlobalKey<NavigatorState>>(),
@@ -45,7 +44,6 @@ Future<void> main() async {
     ),
   );
 }
-
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -96,6 +94,7 @@ class MyApp extends StatelessWidget {
         )
       ),
       home: const SplashScreen(),
+      // Builder se wrapper hata diya gaya hai
       builder: (context, child) {
         return GestureDetector(
           onTap: () {

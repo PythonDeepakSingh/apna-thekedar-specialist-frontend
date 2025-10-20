@@ -224,20 +224,28 @@ class _AddressProofScreenState extends State<AddressProofScreen> {
                                 child: Text(doc.name),
                               );
                             }).toList(),
-                            onChanged: (DocumentType? newValue) {
+                            onChanged: (DocumentType? newValue) async {
                               if (newValue != null && newValue.id == -1) {
-                                // Agar "Other" select hua hai
-                                Navigator.push(
+                            // Agar "Other" select hua hai
+                                // === YAHAN BADLAAV KIYA GAYA HAI ===
+                                final result = await Navigator.push( // 'await' karke result ka intezaar karein
                                   context,
                                   MaterialPageRoute(
                                     builder: (context) => MiscellaneousDocumentScreen(
-                                      // Hum address type ko yahan se bhejenge
-                                      documentFor: widget.addressType == 'Permanent' 
-                                          ? 'PERMANENT_ADDRESS' 
+                                      documentFor: widget.addressType == 'Permanent'
+                                          ? 'PERMANENT_ADDRESS'
                                           : 'CURRENT_ADDRESS',
                                     ),
                                   ),
                                 );
+
+                                // Agar miscellaneous screen se 'true' wapas aaya, to is screen ko bhi band kar do
+                                if (result == true && mounted) {
+                                  Future.delayed(Duration.zero, () {
+                                    Navigator.of(context).pop(true);
+                                  });
+                                }
+
                               } else {
                                 setState(() {
                                   _selectedDocType = newValue;

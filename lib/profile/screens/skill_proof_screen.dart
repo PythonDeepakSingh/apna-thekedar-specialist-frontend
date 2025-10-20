@@ -201,14 +201,23 @@ class _SkillProofScreenState extends State<SkillProofScreen> {
                         child: Text(doc.name),
                       );
                     }).toList(),
-                    onChanged: (SkillDocumentType? newValue) {
+                    onChanged: (SkillDocumentType? newValue) async {
                       if (newValue != null && newValue.id == -1) {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) =>
-                                    const MiscellaneousDocumentScreen(
-                                        documentFor: 'SKILL')));
+                          // === YAHAN BADLAAV KIYA GAYA HAI ===
+                          final result = await Navigator.push( // 'await' karke result ka intezaar karein
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) =>
+                                      const MiscellaneousDocumentScreen(
+                                          documentFor: 'SKILL')));
+
+                          // Agar miscellaneous screen se 'true' wapas aaya, to is screen ko bhi band kar do
+                        if (result == true && mounted) {
+                          Future.delayed(Duration.zero, () {
+                            Navigator.of(context).pop(true);
+                          });
+                        }
+                       
                       } else {
                         setState(() {
                           _selectedDocType = newValue;

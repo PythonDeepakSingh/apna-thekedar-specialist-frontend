@@ -15,7 +15,7 @@ class _RequirementListScreenState extends State<RequirementListScreen> {
   final ApiService _apiService = ApiService();
   List<dynamic> _requirements = [];
   bool _isLoading = true;
-  String? _error;
+
 
   @override
   void initState() {
@@ -23,38 +23,23 @@ class _RequirementListScreenState extends State<RequirementListScreen> {
     _fetchRequirements();
   }
 
-  Future<void> _fetchRequirements() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    try {
-      final response = await _apiService.get('/projects/requirements/available/'); // Frontend change
-      if (mounted) {
-        if (response.statusCode == 200) {
-          setState(() {
-            _requirements = json.decode(response.body);
-          });
-        } else {
-          setState(() {
-            _error = 'Failed to load requirements.';
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'An error occurred: $e';
-        });
-      }
-    } finally {
-      if(mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+Future<void> _fetchRequirements() async {
+  setState(() { _isLoading = true; }); // Error variable yahan se hata dein
+
+  final response = await _apiService.get('/projects/requirements/available/');
+  if (mounted) {
+    if (response.statusCode == 200) {
+      setState(() {
+        _requirements = json.decode(response.body);
+      });
     }
+    // else wala part hata dein
   }
+
+  if(mounted) {
+    setState(() { _isLoading = false; });
+  }
+}
 
   Future<void> _acceptRequirement(int requirementId) async {
     try {
@@ -98,8 +83,6 @@ class _RequirementListScreenState extends State<RequirementListScreen> {
       // =======================================================
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
               : _requirements.isEmpty
                   ? Center(
                       child: Padding(

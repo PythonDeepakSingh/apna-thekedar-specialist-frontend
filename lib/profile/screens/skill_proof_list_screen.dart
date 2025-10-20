@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:apna_thekedar_specialist/profile/screens/skill_proof_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:apna_thekedar_specialist/core/widgets/full_screen_image_viewer.dart';
 
 class SkillProofListScreen extends StatefulWidget {
   const SkillProofListScreen({super.key});
@@ -69,13 +70,39 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No file available to view.')));
       return;
     }
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the document.')),
+  
+    // Naya logic: Check karo ki file PDF hai ya image
+    final isPdf = url.toLowerCase().endsWith('.pdf');
+    final isImage = url.toLowerCase().endsWith('.jpg') || url.toLowerCase().endsWith('.jpeg') || url.toLowerCase().endsWith('.png');
+  
+    if (isPdf) {
+      // PDF ke liye purana logic
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the document.')),
+        );
+      }
+    } else if (isImage) {
+      // Image ke liye naya logic: Nayi screen par jao
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FullScreenImageViewer(imageUrl: url),
+        ),
       );
+    } else {
+      // Agar na image hai na PDF, to bhi browser mein kholne ki koshish karo
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot open this file type.')),
+        );
+      }
     }
   }
 

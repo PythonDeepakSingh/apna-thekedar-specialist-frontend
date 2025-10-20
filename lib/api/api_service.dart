@@ -1,4 +1,4 @@
-// lib/api/api_service.dart
+// lib/api/api_service.dart (Reverted to simple version)
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +7,8 @@ import 'package:apna_thekedar_specialist/notifications/notification_model.dart';
 
 class ApiService {
   final String _baseUrl = 'https://apna-thekedar-backend.onrender.com/api/v1';
+
+  // Global error handling yahan se hata diya gaya hai
 
   Future<http.Response> publicPost(String endpoint, Map<String, dynamic> body) async {
     final url = Uri.parse('$_baseUrl$endpoint');
@@ -79,25 +81,16 @@ class ApiService {
     return response;
   }
 
-Future<http.Response> get(String endpoint) async {
-  return _makeRequest((accessToken) async { // async yahan add karein
-    final url = Uri.parse('$_baseUrl$endpoint');
-    final response = await http.get( // await yahan add karein
-      url,
-      headers: {'Authorization': 'Bearer $accessToken'},
-    );
-
-    // ================== YEH LINE ADD KAREIN ==================
-    // Sirf project details wale response ko print karega
-    if (endpoint.contains('/projects/') && endpoint.contains('/details')) {
-      print('>>> RESPONSE FROM $endpoint: ${response.body}');
-    }
-    // =========================================================
-
-    return response; // response ko return karein
-  });
-}
-
+  Future<http.Response> get(String endpoint) async {
+    return _makeRequest((accessToken) async {
+      final url = Uri.parse('$_baseUrl$endpoint');
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer $accessToken'},
+      );
+      return response;
+    });
+  }
 
   Future<http.Response> post(String endpoint, Map<String, dynamic> body) async {
     return _makeRequest((accessToken) {
@@ -113,7 +106,6 @@ Future<http.Response> get(String endpoint) async {
     });
   }
   
-  // YEH ISKA ORIGINAL, SAHI VERSION HAI
   Future<http.Response> patch(String endpoint, Map<String, dynamic> data) async {
     return _makeRequest((accessToken) async {
       final url = Uri.parse('$_baseUrl$endpoint');
@@ -205,7 +197,7 @@ Future<http.Response> get(String endpoint) async {
     });
   }
 
-  Future<http.Response> postWithFilesAndList({ // <-- Yahan se 'String s,' hata diya gaya hai
+  Future<http.Response> postWithFilesAndList({
     required String endpoint,
     required Map<String, String> fields,
     required Map<String, List<File>> fileLists,
@@ -215,15 +207,12 @@ Future<http.Response> get(String endpoint) async {
       final url = Uri.parse('$_baseUrl$endpoint');
       var request = http.MultipartRequest('POST', url);
       request.headers['Authorization'] = 'Bearer $accessToken';
-
       request.fields.addAll(fields);
-
       for (var entry in fieldLists.entries) {
         for (var value in entry.value) {
           request.fields[entry.key] = value;
         }
       }
-
       for (var entry in fileLists.entries) {
         for (var file in entry.value) {
           request.files.add(
@@ -235,7 +224,6 @@ Future<http.Response> get(String endpoint) async {
     });
   }
 
-  // === YEH NAYA FUNCTION ADD KAREIN ===
   Future<http.Response> postMultipart(
     String endpoint, {
     required Map<String, String> fields,
@@ -246,15 +234,10 @@ Future<http.Response> get(String endpoint) async {
       final url = Uri.parse('$_baseUrl$endpoint');
       var request = http.MultipartRequest('POST', url);
       request.headers['Authorization'] = 'Bearer $accessToken';
-      
       request.fields.addAll(fields);
-
-      // Handle list of fields (item_names)
       for (var entry in fieldLists.entries) {
-        request.fields[entry.key] = json.encode(entry.value); // Encode as JSON string
+        request.fields[entry.key] = json.encode(entry.value);
       }
-
-      // Handle list of files (images)
       for (var entry in files.entries) {
         for (var file in entry.value) {
           request.files.add(
@@ -266,7 +249,6 @@ Future<http.Response> get(String endpoint) async {
     });
   }
 
-  // --- NAYE FUNCTIONS YAHAN HAIN ---
   Future<List<NotificationModel>> getNotifications() async {
     final response = await get('/notifications/');
     if (response.statusCode == 200) {
@@ -293,7 +275,7 @@ Future<http.Response> get(String endpoint) async {
     );
   }
   Future<http.Response> checkForUpdate(String versionCode, String deviceType) {
-    // Yahan hum seedha 'get' ka istemaal kar sakte hain
     return get('/operations/check-for-update/?version_code=$versionCode&device_type=$deviceType');
   }
 }
+

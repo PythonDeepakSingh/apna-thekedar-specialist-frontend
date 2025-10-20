@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:586694196012:android:8bc76f980917510dad8a89",
+        "android_client_info": {
+          "package_name": "com.apnathekedar.specialist"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAOC4euEUcrxonHOhAnbgSZyNNSpFGrAHg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:586694196012:android:71963486044d61e1ad8a89",
         "android_client_info": {
           "package_name": "com.example.apna_thekedar_specialist"
