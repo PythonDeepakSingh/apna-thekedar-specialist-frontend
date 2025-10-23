@@ -1,9 +1,13 @@
-// lib/profile/screens/identity_proof_view_screen.dart (FINAL CODE)
+// lib/profile/screens/identity_proof_view_screen.dart (FINAL CODE with Error Handling)
 import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 import 'dart:convert';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:apna_thekedar_specialist/profile/screens/identity_proof_screen.dart';
+
+// === Naye Imports ===
+import 'dart:io';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 
 class IdentityProofViewScreen extends StatefulWidget {
   const IdentityProofViewScreen({super.key});
@@ -23,17 +27,35 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
     _documentFuture = _fetchIdentityProof();
   }
 
+  // === Is function me Internet Check add kiya gaya hai ===
   Future<Map<String, dynamic>> _fetchIdentityProof() async {
+    // Internet Check
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw const SocketException("No Internet");
+      }
+    } on SocketException catch (_) {
+      throw const SocketException("No Internet");
+    }
+
     final response =
         await _apiService.get('/specialist/documents/identity/');
     if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
       if (response.statusCode == 404) {
-        return {};
+        return {}; // Khaali data matlab "Not uploaded yet"
       }
+      // Server se error aane par
       throw Exception('Failed to load identity details');
     }
+  }
+  
+  void _refreshData() {
+    setState(() {
+      _documentFuture = _fetchIdentityProof();
+    });
   }
 
   @override
@@ -44,23 +66,32 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
         actions: [
           IconButton(
             icon: const Icon(Iconsax.refresh),
-            onPressed: () {
-              setState(() {
-                _documentFuture = _fetchIdentityProof();
-              });
-            },
+            onPressed: _refreshData,
           ),
         ],
       ),
+      // === body me FutureBuilder ko update kiya gaya hai ===
       body: FutureBuilder<Map<String, dynamic>>(
         future: _documentFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+
+          // Error Handling
           if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
+            bool isInternetError = snapshot.error is SocketException;
+            return AttractiveErrorWidget(
+              imagePath: isInternetError ? 'assets/no_internet.png' : 'assets/server_error.png',
+              title: isInternetError ? "No Internet" : "Server Error",
+              message: isInternetError 
+                  ? "Please check your connection and try again."
+                  : "Could not load your identity details.",
+              buttonText: "Retry",
+              onRetry: _refreshData,
+            );
           }
+          
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return _buildEmptyState();
           }
@@ -69,6 +100,7 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
           final status = data['status'];
           final bool canEdit = status != 'APPROVED';
 
+          // Aapka purana UI
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -78,15 +110,12 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
                 _buildDetailRow('Aadhaar Number:', data['aadhaar_number'] ?? 'Not provided'),
                 _buildDetailRow('Status:', status ?? 'Not Uploaded'),
                 const Divider(height: 32),
-
-                // Photos yahan dikhengi
                 _buildPhotoViewer('PAN Card', data['pan_document_image_url']),
                 const SizedBox(height: 16),
                 _buildPhotoViewer('Aadhaar (Front)', data['aadhaar_front_image_url']),
                 const SizedBox(height: 16),
                 _buildPhotoViewer('Aadhaar (Back)', data['aadhaar_back_image_url']),
                 const SizedBox(height: 32),
-
                 if (canEdit)
                   SizedBox(
                     width: double.infinity,
@@ -98,9 +127,7 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
                               builder: (context) => const IdentityProofScreen()),
                         );
                         if (result == true) {
-                          setState(() {
-                            _documentFuture = _fetchIdentityProof();
-                          });
+                          _refreshData();
                         }
                       },
                       child: const Text("Upload / Edit Details"),
@@ -114,7 +141,7 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
     );
   }
 
-  // Photo dikhane ke liye naya widget
+  // Baaki ke helper functions waise hi rahenge
   Widget _buildPhotoViewer(String title, String? imageUrl) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,9 +178,6 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
     );
   }
   
-  // ... (_buildEmptyState aur _buildDetailRow functions waise hi rahenge) ...
-
-
   Widget _buildEmptyState() {
     return Center(
       child: Padding(
@@ -176,9 +200,7 @@ class _IdentityProofViewScreenState extends State<IdentityProofViewScreen> {
                   MaterialPageRoute(builder: (context) => const IdentityProofScreen()),
                 );
                 if (result == true) {
-                   setState(() {
-                    _documentFuture = _fetchIdentityProof();
-                  });
+                   _refreshData();
                 }
               },
               child: const Text('Upload Documents'),

@@ -1,10 +1,12 @@
-// lib/projects/screens/create_quotation_screen.dart
+// lib/projects/screens/create_quotation_screen.dart (Updated: Expected Date Removed)
 
 import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'dart:convert';
 import 'package:iconsax/iconsax.dart';
 import 'package:apna_thekedar_specialist/projects/screens/quotation_preview_screen.dart';
+import 'dart:io';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 
 // Quotation ke har item ko manage karne ke liye
 class QuotationItem {
@@ -26,12 +28,11 @@ class CreateQuotationScreen extends StatefulWidget {
 class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
-  String? _error;
+  String? _errorType;
 
   final _estimationDetailsController = TextEditingController();
-  // ==================== CHANGE 1: Variable ka naam badla gaya ====================
-  DateTime? _expectedCompletionDate; // Purana naam _validUntil tha
-  final List<QuotationItem> _items = [QuotationItem()]; // Start with one item
+  // === BADLAV 1: expectedCompletionDate yahan se hata diya gaya hai ===
+  final List<QuotationItem> _items = [QuotationItem()];
 
   List<dynamic> _itemTemplates = [];
 
@@ -42,7 +43,16 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
   }
 
   Future<void> _fetchItemTemplates() async {
+    setState(() {
+      _isLoading = true;
+      _errorType = null;
+    });
     try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw 'no_internet';
+      }
+
       final response = await _apiService.get('/services/service-items/?requirement_id=${widget.requirementId}');
       if (mounted) {
         if (response.statusCode == 200) {
@@ -51,11 +61,13 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
             if (_items.isEmpty) _items.add(QuotationItem());
           });
         } else {
-          _error = "Could not load item suggestions.";
+          throw 'server_error';
         }
       }
+    } on SocketException catch (_) {
+      _errorType = 'no_internet';
     } catch (e) {
-      if (mounted) _error = "An error occurred: $e";
+      if (mounted) _errorType = e.toString() == 'server_error' ? 'server_error' : 'unknown';
     }
     if (mounted) setState(() { _isLoading = false; });
   }
@@ -80,32 +92,16 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
     });
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    // ==================== CHANGE 2: DatePicker mein naye variable ka istemaal ====================
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _expectedCompletionDate ?? DateTime.now().add(const Duration(days: 7)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 2)), // 2 saal tak ka time de diya
-    );
-    if (picked != null && picked != _expectedCompletionDate) {
-      setState(() { _expectedCompletionDate = picked; });
-    }
-  }
+  // === BADLAV 2: _selectDate function poora hata diya gaya hai ===
 
+  // === BADLAV 3: _sendQuotation function ko update kiya gaya hai ===
   Future<void> _sendQuotation() async {
-    // ==================== CHANGE 3: Check aur error message ko naye logic ke hisaab se badla gaya ====================
-    if (_expectedCompletionDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select an expected completion date.')));
-      return;
-    }
-    
     final List<Map<String, dynamic>> itemsData = _items
         .where((item) => item.nameController.text.isNotEmpty && item.chargeController.text.isNotEmpty)
         .map((item) => {
               'item_name': item.nameController.text,
               'value': item.valueController.text,
-              'time_in_days': int.tryParse(item.timeController.text), // Empty hone par null jayega
+              'time_in_days': int.tryParse(item.timeController.text),
               'charge': double.tryParse(item.chargeController.text) ?? 0,
             })
         .toList();
@@ -119,8 +115,6 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
       'requirement': widget.requirementId,
       'amount': _calculateTotal(),
       'estimation_details': _estimationDetailsController.text,
-      // ==================== CHANGE 4: Backend ko bhejne ke liye sahi key aur variable ka istemaal ====================
-      'expected_completion_date': _expectedCompletionDate!.toIso8601String().split('T').first, // Sirf YYYY-MM-DD format mein bhejega
       'items': itemsData,
     };
 
@@ -140,8 +134,14 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
       appBar: AppBar(title: const Text('Create Quotation')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
+          : _errorType != null
+              ? AttractiveErrorWidget(
+                  imagePath: _errorType == 'no_internet' ? 'assets/no_internet.png' : 'assets/server_error.png',
+                  title: "Could not load suggestions",
+                  message: "We couldn't load item suggestions. Please check your connection and try again.",
+                  buttonText: "Retry",
+                  onRetry: _fetchItemTemplates,
+                )
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
@@ -160,42 +160,32 @@ class _CreateQuotationScreenState extends State<CreateQuotationScreen> {
                       const Text("Other Details", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
                       TextFormField(controller: _estimationDetailsController, decoration: const InputDecoration(labelText: 'Estimation Details (Optional)'), maxLines: 3),
-                      const SizedBox(height: 20),
-                      // ==================== CHANGE 5: Date field ke UI text aur logic ko update kiya gaya ====================
-                      TextFormField(
-                        readOnly: true,
-                        decoration: InputDecoration(
-                          labelText: 'Expected Completion Date',
-                          hintText: _expectedCompletionDate == null 
-                              ? 'Select Date' 
-                              : '${_expectedCompletionDate!.day}/${_expectedCompletionDate!.month}/${_expectedCompletionDate!.year}', // Format badal diya
-                          prefixIcon: const Icon(Iconsax.calendar_1),
-                        ),
-                        onTap: () => _selectDate(context),
-                      ),
+                      
+                      // === BADLAV 4: Date wala TextFormField yahan se hata diya gaya hai ===
                     ],
                   ),
                 ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text("Total Amount: ₹${_calculateTotal().toStringAsFixed(2)}", textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: _sendQuotation, // Loading state yahan se hata diya kyunki hum next screen par ja rahe hain
-              child: const Text('Preview & Send Quotation'),
+      bottomNavigationBar: (_isLoading || _errorType != null)
+          ? null
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text("Total Amount: ₹${_calculateTotal().toStringAsFixed(2)}", textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: _sendQuotation,
+                    child: const Text('Preview & Send Quotation'),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
     );
   }
 
   Widget _buildItemCard(QuotationItem item, int index) {
-    // Is widget mein koi badlaav nahi hai, yeh waisa hi rahega
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(

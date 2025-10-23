@@ -1,4 +1,4 @@
-// lib/profile/screens/address_proof_list_screen.dart (FINAL & COMPLETE CODE)
+// lib/profile/screens/address_proof_list_screen.dart (FINAL CORRECTED CODE)
 import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 import 'dart:convert';
@@ -6,9 +6,11 @@ import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:apna_thekedar_specialist/profile/screens/address_proof_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:apna_thekedar_specialist/core/widgets/full_screen_image_viewer.dart';
+import 'dart:io';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 
 class AddressProofListScreen extends StatefulWidget {
-  final String addressType; // 'Permanent' ya 'Current'
+  final String addressType;
   const AddressProofListScreen({super.key, required this.addressType});
 
   @override
@@ -26,29 +28,41 @@ class _AddressProofListScreenState extends State<AddressProofListScreen> {
   }
 
   Future<List<dynamic>> _fetchAddressProofs() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw const SocketException("No Internet");
+      }
+    } on SocketException catch (_) {
+      throw const SocketException("No Internet");
+    }
+
     final response = await _apiService.get('/specialist/documents/address-proofs/');
     if (response.statusCode == 200) {
       final allDocs = json.decode(response.body) as List;
-      // Sirf is page ke type (Permanent/Current) ke documents filter karo
       String apiAddressType = widget.addressType == 'Permanent' ? 'PERMANENT' : 'CURRENT';
-      // Hum dono tarah ke documents (uploaded + Aadhaar/PAN + "Other") ko filter karenge
       return allDocs.where((doc) {
-        // 'document_for' miscellaneous docs ke liye hai, 'address_type' baaki sabke liye
         return doc['address_type'] == apiAddressType || doc['document_for'] == ("${apiAddressType}_ADDRESS");
       }).toList();
     } else {
       throw Exception('Failed to load address proofs');
     }
   }
+  
+  void _refreshData() {
+    setState(() {
+      _documentsFuture = _fetchAddressProofs();
+    });
+  }
 
+  // ... (_deleteProof aur _viewDocument functions waise hi rahenge) ...
   Future<void> _deleteProof(dynamic doc) async {
     String endpoint;
-    // Check karo ki yeh normal document hai, miscellaneous, ya identity
-    if (doc.containsKey('document_for')) { // Yeh 'MiscellaneousDocument' hai
+    if (doc.containsKey('document_for')) {
       endpoint = '/specialist/documents/misc/${doc['id']}/';
-    } else if (!doc['id'].toString().startsWith('identity')) { // Yeh 'AddressProof' hai
+    } else if (!doc['id'].toString().startsWith('identity')) {
       endpoint = '/specialist/documents/address-proofs/${doc['id']}/';
-    } else { // Yeh Aadhaar/PAN hai, ise delete nahi kar sakte
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This can only be changed from the address upload screen.')));
       return;
     }
@@ -58,7 +72,7 @@ class _AddressProofListScreenState extends State<AddressProofListScreen> {
       if (mounted) {
         if (response.statusCode == 204) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document deleted successfully!')));
-          setState(() { _documentsFuture = _fetchAddressProofs(); });
+          _refreshData();
         } else {
            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${response.body}')));
         }
@@ -70,19 +84,30 @@ class _AddressProofListScreenState extends State<AddressProofListScreen> {
     }
   }
   
-  Future<void> _viewDocument(String? url) async {
-    if (url == null || url.isEmpty) {
+  Future<void> _viewDocument(dynamic doc) async {
+
+    final docId = doc['id'].toString();
+    final fileUrl = doc['document_file_url']; // fileUrl ko yahan define karein
+
+    if (docId.startsWith('identity')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This uses your Aadhaar/PAN card image. View it in the Identity Proof section.'),
+        ),
+      );
+      return; // Aage kuch na karein
+    }
+
+    if (fileUrl == null || fileUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No file available to view.')));
       return;
     }
   
-    // Naya logic: Check karo ki file PDF hai ya image
-    final isPdf = url.toLowerCase().endsWith('.pdf');
-    final isImage = url.toLowerCase().endsWith('.jpg') || url.toLowerCase().endsWith('.jpeg') || url.toLowerCase().endsWith('.png');
+    final isPdf = fileUrl.toLowerCase().endsWith('.pdf');
+    final isImage = fileUrl.toLowerCase().endsWith('.jpg') || fileUrl.toLowerCase().endsWith('.jpeg') || fileUrl.toLowerCase().endsWith('.png');
   
     if (isPdf) {
-      // PDF ke liye purana logic
-      final uri = Uri.parse(url);
+      final uri = Uri.parse(fileUrl);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
@@ -91,16 +116,14 @@ class _AddressProofListScreenState extends State<AddressProofListScreen> {
         );
       }
     } else if (isImage) {
-      // Image ke liye naya logic: Nayi screen par jao
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => FullScreenImageViewer(imageUrl: url),
+          builder: (context) => FullScreenImageViewer(imageUrl: fileUrl),
         ),
       );
     } else {
-      // Agar na image hai na PDF, to bhi browser mein kholne ki koshish karo
-      final uri = Uri.parse(url);
+      final uri = Uri.parse(fileUrl);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
@@ -111,34 +134,33 @@ class _AddressProofListScreenState extends State<AddressProofListScreen> {
     }
   }
 
-  @override
+
+@override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${widget.addressType} Address Proofs'),
-        actions: [
-          IconButton(
-            icon: const Icon(Iconsax.refresh),
-            onPressed: () => setState(() { _documentsFuture = _fetchAddressProofs(); }),
-          ),
-        ],
-      ),
-      body: FutureBuilder<List<dynamic>>(
-        future: _documentsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-             return Center(child: Text("Error: ${snapshot.error}"));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(child: Text("No documents uploaded for ${widget.addressType.toLowerCase()} address."));
-          }
+    return FutureBuilder<List<dynamic>>(
+      future: _documentsFuture,
+      builder: (context, snapshot) {
+        bool showLoading = snapshot.connectionState == ConnectionState.waiting;
+        bool showError = snapshot.hasError;
 
+        Widget body;
+
+        if (showLoading) {
+          body = const Center(child: CircularProgressIndicator());
+        } else if (showError) {
+          bool isInternetError = snapshot.error is SocketException;
+          body = AttractiveErrorWidget(
+            imagePath: isInternetError ? 'assets/no_internet.png' : 'assets/server_error.png',
+            title: isInternetError ? "No Internet" : "Server Error",
+            message: "Could not load your address proofs.",
+            buttonText: "Retry",
+            onRetry: _refreshData,
+          );
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          body = Center(child: Text("No documents uploaded for ${widget.addressType.toLowerCase()} address."));
+        } else {
           final documents = snapshot.data!;
-
-          return ListView.builder(
+          body = ListView.builder(
             itemCount: documents.length,
             itemBuilder: (context, index) {
               final doc = documents[index];
@@ -160,7 +182,7 @@ class _AddressProofListScreenState extends State<AddressProofListScreen> {
                   ),
                   title: Text(doc['document_type_name'] ?? doc['document_name'] ?? 'Document'),
                   subtitle: Text('Status: $status'),
-                  onTap: () => _viewDocument(fileUrl),
+                  onTap: () => _viewDocument(doc),
                   trailing: canDelete
                       ? IconButton(
                           icon: const Icon(Iconsax.trash, color: Colors.red),
@@ -171,21 +193,36 @@ class _AddressProofListScreenState extends State<AddressProofListScreen> {
               );
             },
           );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => AddressProofScreen(addressType: widget.addressType)),
-          );
-          if (result == true) {
-            setState(() { _documentsFuture = _fetchAddressProofs(); });
-          }
-        },
-        label: const Text('Add New Proof'),
-        icon: const Icon(Iconsax.add),
-      ),
+        }
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('${widget.addressType} Address Proofs'),
+            actions: [
+              IconButton(
+                icon: const Icon(Iconsax.refresh),
+                onPressed: _refreshData,
+              )
+            ],
+          ),
+          body: body,
+          floatingActionButton: (showLoading || showError)
+              ? null
+              : FloatingActionButton.extended(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AddressProofScreen(addressType: widget.addressType)),
+                    );
+                    if (result == true) {
+                      _refreshData();
+                    }
+                  },
+                  label: const Text('Add New Proof'),
+                  icon: const Icon(Iconsax.add),
+                ),
+        );
+      },
     );
   }
 }

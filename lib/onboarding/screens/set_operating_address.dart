@@ -33,7 +33,7 @@ class _SetOperatingAddressScreenState extends State<SetOperatingAddressScreen> {
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(28.6139, 77.2090),
-    zoom: 12.0,
+    zoom: 14.0,
   );
 
   @override
@@ -202,7 +202,7 @@ class _SetOperatingAddressScreenState extends State<SetOperatingAddressScreen> {
     // Baaki ka UI code bilkul waisa hi hai
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Set Operating Address (2/2)'),
+        title: const Text('Current (Operating) Address'),
         leading: IconButton(
           icon: const Icon(Iconsax.arrow_left),
           onPressed: () => Navigator.of(context).pop(),

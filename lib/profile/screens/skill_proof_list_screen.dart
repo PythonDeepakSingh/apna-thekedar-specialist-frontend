@@ -1,4 +1,4 @@
-// lib/profile/screens/skill_proof_list_screen.dart (FINAL & COMPLETE CODE)
+// lib/profile/screens/skill_proof_list_screen.dart (FINAL CORRECTED CODE)
 import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 import 'dart:convert';
@@ -6,6 +6,8 @@ import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:apna_thekedar_specialist/profile/screens/skill_proof_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:apna_thekedar_specialist/core/widgets/full_screen_image_viewer.dart';
+import 'dart:io';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 
 class SkillProofListScreen extends StatefulWidget {
   const SkillProofListScreen({super.key});
@@ -25,6 +27,15 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
   }
 
   Future<List<dynamic>> _fetchSkillProofs() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw const SocketException("No Internet");
+      }
+    } on SocketException catch (_) {
+      throw const SocketException("No Internet");
+    }
+
     final response = await _apiService.get('/specialist/documents/skill-proofs/');
     if (response.statusCode == 200) {
       return json.decode(response.body) as List;
@@ -33,6 +44,13 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
     }
   }
 
+  void _refreshData() {
+    setState(() {
+      _documentsFuture = _fetchSkillProofs();
+    });
+  }
+
+  // ... (_deleteProof aur _viewDocument functions waise hi rahenge) ...
   Future<void> _deleteProof(dynamic doc) async {
     String endpoint;
     if (doc.containsKey('document_for')) {
@@ -48,7 +66,7 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Document deleted successfully!')),
           );
-          setState(() { _documentsFuture = _fetchSkillProofs(); });
+          _refreshData();
         } else {
            final error = json.decode(response.body);
            ScaffoldMessenger.of(context).showSnackBar(
@@ -71,12 +89,10 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
       return;
     }
   
-    // Naya logic: Check karo ki file PDF hai ya image
     final isPdf = url.toLowerCase().endsWith('.pdf');
     final isImage = url.toLowerCase().endsWith('.jpg') || url.toLowerCase().endsWith('.jpeg') || url.toLowerCase().endsWith('.png');
   
     if (isPdf) {
-      // PDF ke liye purana logic
       final uri = Uri.parse(url);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -86,7 +102,6 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
         );
       }
     } else if (isImage) {
-      // Image ke liye naya logic: Nayi screen par jao
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -94,7 +109,6 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
         ),
       );
     } else {
-      // Agar na image hai na PDF, to bhi browser mein kholne ki koshish karo
       final uri = Uri.parse(url);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -106,31 +120,33 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
     }
   }
 
-  @override
+
+@override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Uploaded Skill Proofs'),
-        actions: [
-          IconButton(
-            icon: const Icon(Iconsax.refresh),
-            onPressed: () => setState(() { _documentsFuture = _fetchSkillProofs(); }),
-          )
-        ],
-      ),
-      body: FutureBuilder<List<dynamic>>(
-        future: _documentsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text("No skill documents uploaded yet."));
-          }
+    return FutureBuilder<List<dynamic>>(
+      future: _documentsFuture,
+      builder: (context, snapshot) {
+        bool showLoading = snapshot.connectionState == ConnectionState.waiting;
+        bool showError = snapshot.hasError;
 
+        Widget body;
+
+        if (showLoading) {
+          body = const Center(child: CircularProgressIndicator());
+        } else if (showError) {
+          bool isInternetError = snapshot.error is SocketException;
+          body = AttractiveErrorWidget(
+            imagePath: isInternetError ? 'assets/no_internet.png' : 'assets/server_error.png',
+            title: isInternetError ? "No Internet" : "Server Error",
+            message: "Could not load your skill proofs.",
+            buttonText: "Retry",
+            onRetry: _refreshData,
+          );
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          body = const Center(child: Text("No skill documents uploaded yet."));
+        } else {
           final documents = snapshot.data!;
-
-          return ListView.builder(
+          body = ListView.builder(
             itemCount: documents.length,
             itemBuilder: (context, index) {
               final doc = documents[index];
@@ -164,21 +180,36 @@ class _SkillProofListScreenState extends State<SkillProofListScreen> {
               );
             },
           );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const SkillProofScreen()),
-          );
-          if (result == true) {
-            setState(() { _documentsFuture = _fetchSkillProofs(); });
-          }
-        },
-        label: const Text('Add New Skill Proof'),
-        icon: const Icon(Iconsax.add),
-      ),
+        }
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Uploaded Skill Proofs'),
+            actions: [
+              IconButton(
+                icon: const Icon(Iconsax.refresh),
+                onPressed: _refreshData,
+              )
+            ],
+          ),
+          body: body,
+          floatingActionButton: (showLoading || showError)
+              ? null
+              : FloatingActionButton.extended(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const SkillProofScreen()),
+                    );
+                    if (result == true) {
+                      _refreshData();
+                    }
+                  },
+                  label: const Text('Add New Skill Proof'),
+                  icon: const Icon(Iconsax.add),
+                ),
+        );
+      },
     );
   }
 }

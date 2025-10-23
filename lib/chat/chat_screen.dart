@@ -1,10 +1,14 @@
-// lib/chat/chat_screen.dart
+// lib/chat/chat_screen.dart (Updated with Error Handling)
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:iconsax/iconsax.dart';
+
+// === Naye Imports ===
+import 'dart:io';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 
 // Message ko represent karne ke liye ek choti si class
 class ChatMessage {
@@ -17,9 +21,7 @@ class ChatMessage {
 
 class ChatScreen extends StatefulWidget {
   final int projectId;
-  // Ab hum customer ka naam yahan lenge
   final String customerName;
-  // Specialist ka apna naam, taaki pata chale kaun message bhej raha hai
   final String myName;
 
   const ChatScreen({
@@ -37,21 +39,66 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   WebSocketChannel? _channel;
   bool _isLoading = true;
-  String? _error;
+  String? _error; // Isko ab _errorType se manage karenge
+  String? _errorType; // === Naya Variable ===
   List<ChatMessage> _messages = [];
 
   @override
   void initState() {
     super.initState();
-    // Ab hum pehle purane messages load karenge,
-    // jisse token apne aap refresh ho jaayega.
     _loadOldMessages();
   }
 
-  // WebSocket se connect karne ka function
+  // === Is function ko update kiya gaya hai ===
+  Future<void> _loadOldMessages() async {
+    setState(() {
+      _isLoading = true;
+      _errorType = null;
+      _error = null;
+    });
+
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw 'no_internet';
+      }
+
+      final apiService = ApiService();
+      final response = await apiService.get('/chat/projects/${widget.projectId}/messages/');
+      
+      if (mounted) {
+        if (response.statusCode == 200) {
+          final List<dynamic> oldMessages = json.decode(response.body);
+          setState(() {
+            _messages = oldMessages.map((msg) => ChatMessage(
+              sender: msg['sender_name'],
+              message: msg['message'],
+              isMe: msg['sender_name'] == widget.myName
+            )).toList().reversed.toList();
+          });
+          // Messages load hone ke baad hi chat se connect karein
+          await _connectToChat();
+        } else {
+          throw 'server_error';
+        }
+      }
+    } on SocketException catch (_) {
+      _errorType = 'no_internet';
+    } catch (e) {
+      if (mounted) {
+        _errorType = e.toString() == 'server_error' ? 'server_error' : 'unknown';
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // === Is function ko bhi update kiya gaya hai ===
   Future<void> _connectToChat() async {
-    // Is function ka kaam ab bas connect karna hai,
-    // token refresh ka kaam _loadOldMessages ne pehle hi kar diya hai.
     try {
       final prefs = await SharedPreferences.getInstance();
       final accessToken = prefs.getString('accessToken');
@@ -78,7 +125,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       },
       onError: (error) {
-        if(mounted) setState(() => _error = "Connection error. Please restart the page.");
+        if(mounted) setState(() => _error = "Connection error. Please try again.");
       },
       onDone: () {
         if(mounted) setState(() => _error = "Connection closed. Please restart the page.");
@@ -89,36 +136,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _loadOldMessages() async {
-    try {
-      final apiService = ApiService();
-      // YEH API CALL TOKEN KO REFRESH KAR DEGI AGAR ZAROORAT HUI
-      final response = await apiService.get('/chat/projects/${widget.projectId}/messages/');
-      
-      if (mounted && response.statusCode == 200) {
-        final List<dynamic> oldMessages = json.decode(response.body);
-        setState(() {
-          _messages = oldMessages.map((msg) => ChatMessage(
-            sender: msg['sender_name'],
-            message: msg['message'],
-            isMe: msg['sender_name'] == widget.myName
-          )).toList().reversed.toList();
-          _isLoading = false;
-        });
-
-        // MESSAGES LOAD HONE KE BAAD HI CHAT SE CONNECT KAREIN
-        _connectToChat();
-
-      } else {
-        if (mounted) setState(() { _isLoading = false; _error = "Could not load history"; });
-      }
-    } catch (e) {
-      if(mounted) setState(() { _error = "Could not load history: $e"; _isLoading = false; });
-    }
-  }
-
   void _sendMessage() {
     if (_controller.text.isNotEmpty) {
+      if (_channel == null || _channel?.closeCode != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Not connected. Cannot send message.')),
+        );
+        return;
+      }
       _channel?.sink.add(json.encode({'message': _controller.text}));
       _controller.clear();
     }
@@ -131,7 +156,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -140,26 +165,45 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text(_error!))
-                    : ListView.builder(
-                        reverse: true,
-                        padding: const EdgeInsets.all(8.0),
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = _messages[index];
-                          return _buildMessageBubble(msg);
-                        },
-                      ),
+            child: _buildBody(),
           ),
-          _buildMessageComposer(),
+          // Ab yeh condition ke saath chalega
+          if (!_isLoading && _errorType == null)
+            _buildMessageComposer(),
         ],
       ),
     );
   }
+
+  // === Yeh naya function hai UI ko manage karne ke liye ===
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorType != null) {
+      return AttractiveErrorWidget(
+        imagePath: _errorType == 'no_internet' ? 'assets/no_internet.png' : 'assets/server_error.png',
+        title: _errorType == 'no_internet' ? "No Internet" : "Server Error",
+        message: "We couldn't load the chat history. Please check your connection and try again.",
+        buttonText: "Retry",
+        onRetry: _loadOldMessages,
+      );
+    }
+    
+    // Purana UI jab sab kuch theek ho
+    return ListView.builder(
+      reverse: true,
+      padding: const EdgeInsets.all(8.0),
+      itemCount: _messages.length,
+      itemBuilder: (context, index) {
+        final msg = _messages[index];
+        return _buildMessageBubble(msg);
+      },
+    );
+  }
   
+  // ... (baki ke functions _buildMessageBubble aur _buildMessageComposer waise hi rahenge) ...
   Widget _buildMessageBubble(ChatMessage msg) {
     return Align(
       alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -193,6 +237,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageComposer() {
+    // WebSocket ke connection error ko yahan dikhayenge
+    if (_error != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        color: Colors.red.shade100,
+        child: Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: Colors.red.shade900)),
+      );
+    }
+    
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Row(
@@ -215,4 +268,3 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 }
-

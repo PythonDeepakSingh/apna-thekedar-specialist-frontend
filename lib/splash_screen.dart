@@ -15,6 +15,13 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:apna_thekedar_specialist/core/widgets/update_dialog.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:convert'; // json.decode ke liye
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:provider/provider.dart'; // Provider ke liye
+import 'services/notification_service.dart'; // NotificationService ko access karne ke liye
+import 'main.dart'; // flutterLocalNotificationsPlugin ko access karne ke liye
+import 'package:apna_thekedar_specialist/notifications/notification_model.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -35,16 +42,51 @@ class _SplashScreenState extends State<SplashScreen> {
     });
   }
   
+
   Future<void> _initializeApp() async {
     // Notification service ko Provider se get karein
     final notificationService = Provider.of<NotificationService>(context, listen: false);
 
     // Yeh function ab app ke band hone par notification tap ko handle karega
     await notificationService.initialize();
+    await _requestPermissions();
     
-    // Baaki ka logic (user navigation) waise hi chalega
+// === YAHAN FUNCTION KO CALL KAREIN ===
+    _configureLocalNotificationClickListener();
+    // ===================================
+
+    final bool isUpdateRestricted = await _checkForUpdate();
+    if (isUpdateRestricted) {
+      return;
+    }
     await _navigateUser();
   }
+
+void _configureLocalNotificationClickListener() {
+    flutterLocalNotificationsPlugin.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+      onDidReceiveNotificationResponse: (NotificationResponse notificationResponse) async {
+        final String? payload = notificationResponse.payload;
+        if (payload != null && mounted) { // 'mounted' check add karein
+          print('Local notification payload: $payload');
+          try {
+            // NotificationService ka instance Provider se lein
+            final notificationService = Provider.of<NotificationService>(context, listen: false);
+            // Payload ko Map mein convert karke navigation function ko call karein
+            notificationService.handleNotificationClick(
+                NotificationModel.fromJson(json.decode(payload))
+            );
+          } catch (e) {
+            print('Error handling local notification click: $e');
+          }
+        }
+      },
+    );
+  }
+
+
 
   // Is function ko ab `ApiService` ki zaroorat nahi
   Future<void> _sendDeviceTokenToBackend() async {
@@ -175,4 +217,13 @@ class _SplashScreenState extends State<SplashScreen> {
       ),
     );
   }
+
+  Future<void> _requestPermissions() async {
+    await [
+      Permission.location,
+      Permission.camera,
+      Permission.notification, // <-- Bas is line ko add karna hai
+    ].request();
+  }
+
 }

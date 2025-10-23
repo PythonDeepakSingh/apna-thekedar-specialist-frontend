@@ -1,10 +1,14 @@
-// lib/onboarding/screens/select_services_screen.dart
+// lib/onboarding/screens/select_services_screen.dart (Updated with Error Handling)
 
 import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
-import 'package:apna_thekedar_specialist/main_nav_screen.dart'; // Naya import
+import 'package:apna_thekedar_specialist/main_nav_screen.dart';
 import 'dart:convert';
 import 'package:iconsax/iconsax.dart';
+
+// === Naye Imports ===
+import 'dart:io';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 
 // Service Connections ko aache se manage karne ke liye ek choti si class
 class ServiceCategoryGroup {
@@ -37,10 +41,10 @@ class SelectServicesScreen extends StatefulWidget {
 class _SelectServicesScreenState extends State<SelectServicesScreen> {
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
-  String? _error;
+  String? _errorType; // === Purane _error variable ko isse replace kiya hai ===
   List<ServiceCategoryGroup> _groupedServices = [];
   final Set<int> _selectedSkillIds = {};
-  final Map<int, String> _skillStatusMap = {}; // Skill ID aur uska status store karega
+  final Map<int, String> _skillStatusMap = {};
 
   @override
   void initState() {
@@ -48,16 +52,25 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
     _fetchInitialData();
   }
 
+  // === Is function ko update kiya gaya hai ===
   Future<void> _fetchInitialData() async {
+    setState(() {
+      _isLoading = true;
+      _errorType = null;
+    });
+
     try {
-      // Dono APIs ko ek saath call karein
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw 'no_internet';
+      }
+
       final responses = await Future.wait([
         _apiService.get('/services/service-connections/'),
         if (widget.isUpdating) _apiService.get('/specialist/skills/')
       ]);
 
       if (mounted) {
-        // Service Connections ka response handle karein
         final servicesResponse = responses[0];
         if (servicesResponse.statusCode == 200) {
           final List<dynamic> allServices = json.decode(servicesResponse.body);
@@ -89,10 +102,9 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
 
           _groupedServices = tempMap.values.toList();
         } else {
-          _error = "Failed to load services.";
+          throw 'server_error';
         }
         
-        // Agar updating mode mein hai, toh specialist ki skills ka response handle karein
         if (widget.isUpdating) {
           final skillsResponse = responses[1];
           if (skillsResponse.statusCode == 200) {
@@ -101,16 +113,20 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
               _selectedSkillIds.add(skill['skill_id']);
               _skillStatusMap[skill['skill_id']] = skill['status'];
             }
+          } else {
+             throw 'server_error';
           }
         }
       }
+    } on SocketException catch (_) {
+      _errorType = 'no_internet';
     } catch (e) {
-      if (mounted) _error = "An error occurred: $e";
+      if (mounted) _errorType = e.toString() == 'server_error' ? 'server_error' : 'unknown';
     }
     if (mounted) setState(() { _isLoading = false; });
   }
 
-
+  // ... (_onSkillSelected aur _saveSkills functions waise hi rahenge) ...
   void _onSkillSelected(bool? selected, dynamic tappedSkill, ServiceCategoryGroup categoryGroup) {
     setState(() {
       if (selected!) {
@@ -133,8 +149,7 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
           if (anyNonDefaultSelected) {
             _selectedSkillIds.add(defaultService['id']);
           } else {
-            // Agar koi bhi non-default skill select nahi hai, toh default ko bhi hata do
-             if (_skillStatusMap[defaultService['id']] != 'APPROVED') {
+            if (_skillStatusMap[defaultService['id']] != 'APPROVED') {
                 _selectedSkillIds.remove(defaultService['id']);
             }
           }
@@ -162,7 +177,6 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text(widget.isUpdating ? 'Skills updated successfully!' : 'Your profile is complete! Welcome aboard.')),
                 );
-                // Agar update kar rahe hain toh wapas profile screen par jaayein, warna home par
                 if (widget.isUpdating) {
                   Navigator.of(context).pop();
                 } else {
@@ -177,24 +191,30 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
                 );
             }
         }
-    } catch(e){
+    } catch(e) {
         // handle error
     }
     if(mounted) setState(() => _isLoading = false);
   }
 
+  // === build method ko update kiya gaya hai ===
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isUpdating ? 'Manage Your Skills' : 'Select Your Skills'),
-        // Onboarding ke time back button nahi hoga
         automaticallyImplyLeading: widget.isUpdating,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
+          : _errorType != null
+              ? AttractiveErrorWidget(
+                  imagePath: _errorType == 'no_internet' ? 'assets/no_internet.png' : 'assets/server_error.png',
+                  title: _errorType == 'no_internet' ? "No Internet" : "Could not load",
+                  message: "We couldn't load the list of services. Please check your connection and try again.",
+                  buttonText: "Retry",
+                  onRetry: _fetchInitialData,
+                )
               : ListView.builder(
                   padding: const EdgeInsets.all(16.0),
                   itemCount: _groupedServices.length,
@@ -226,7 +246,6 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
                                 ? const Text('(Covers all basic tasks)') 
                                 : (isApproved ? const Text('Verified', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)) : null),
                               value: _selectedSkillIds.contains(skillId),
-                              // Agar skill approved hai, toh use disable kar do
                               onChanged: (shouldBeDim || isApproved) ? null : (bool? selected) {
                                 _onSkillSelected(selected, skill, categoryGroup);
                               },
@@ -237,15 +256,17 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
                     );
                   },
                 ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _saveSkills,
-          child: _isLoading 
-            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3,))
-            : Text(widget.isUpdating ? 'Update Skills' : 'Finish Setup'),
+      bottomNavigationBar: (_isLoading || _errorType != null)
+      ? null // Agar loading ho rahi hai ya error hai, to button mat dikhao
+      : Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _saveSkills,
+            child: _isLoading 
+              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3,))
+              : Text(widget.isUpdating ? 'Update Skills' : 'Finish Setup'),
+          ),
         ),
-      ),
     );
   }
 }

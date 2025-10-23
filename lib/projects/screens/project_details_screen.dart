@@ -22,6 +22,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'dart:ui'; // ImageFilter ke liye zaroori hai
 import 'package:apna_thekedar_specialist/support/request_assistant_screen.dart'; // YEH NAYA IMPORT ADD KAREIN
+import 'dart:io'; // Internet check ke liye
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart'; // Error widget ke liye
+import 'package:url_launcher/url_launcher.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final int projectId;
@@ -38,6 +41,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _projectDetails;
   UserProfile? _myProfile;
+  String? _errorType;
 
   @override
   void initState() {
@@ -54,12 +58,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+
   Future<void> _fetchProjectDetails() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
+      _errorType = null; // Har baar refresh karne par error reset karein
     });
+
     try {
+      // Internet Check
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw 'no_internet';
+      }
+
       final responses = await Future.wait([
         _apiService.get('/projects/${widget.projectId}/details/'),
         UserProfile.loadFromApi(),
@@ -74,7 +87,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             _projectDetails = json.decode(projectResponse.body);
             _myProfile = profile;
           });
+        } else {
+          // Agar API se error aaye
+          throw 'server_error';
+        }
       }
+    } on SocketException catch (_) {
+      _errorType = 'no_internet';
+    } catch (e) {
+      if (mounted) {
+        _errorType = e.toString() == 'server_error' ? 'server_error' : 'unknown';
       }
     } finally {
       if (mounted) {
@@ -84,6 +106,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       }
     }
   }
+
 
   Future<void> _launchMaps() async {
     if (_projectDetails == null) return;
@@ -98,6 +121,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       await launchUrl(googleMapsUrl);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open Google Maps.')));
+    }
+  }
+
+Future<void> _makePhoneCall(String phoneNumber) async {
+    // Bas yahan '+91' add karna hai
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: '+91$phoneNumber', // Corrected line
+    );
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not place the call.')),
+      );
     }
   }
 
@@ -119,19 +157,85 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // ===== CORRECTION 1: APPBAR SE DYNAMIC TITLE HATA DIYA GAYA HAI =====
-    String appBarTitle = _projectDetails?['title'] ?? 'Project Details';
-    // Project ka current status nikaalein
-    final String? projectStatus = _projectDetails?['status'];
 
-    // Yeh woh statuses hain jinmein chat button nahi dikhna chahiye
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorType != null) {
+      return AttractiveErrorWidget(
+        imagePath: _errorType == 'no_internet' ? 'assets/no_internet.png' : 'assets/server_error.png',
+        title: _errorType == 'no_internet' ? "No Internet" : "Server Error",
+        message: _errorType == 'no_internet'
+            ? "Please check your internet and try again."
+            : "Could not load project details. Please try again later.",
+        buttonText: "Retry",
+        onRetry: _fetchProjectDetails,
+      );
+    }
+
+    if (_projectDetails == null) {
+      return AttractiveErrorWidget(
+        imagePath: 'assets/server_error.png', // Aap chahen to 'not_found.png' image bhee bana sakate hain
+        title: "Project Not Found",
+        message: "This project could not be loaded. It might have been deleted.",
+        buttonText: "Go Back",
+        onRetry: () => Navigator.of(context).pop(),
+      );
+    }
+
+    // Aapka purana UI code ab yahaan hai
+    final String? projectStatus = _projectDetails!['status'];
     const List<String> hideChatStatuses = [
       'WORK_COMPLETED',
       'WORK_CANCELLED',
       'WORK_PAUSED'
     ];
+
+    return RefreshIndicator(
+      onRefresh: _fetchProjectDetails,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInfoCard(),
+            _buildTimelineInfo(),
+            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            _buildActionWidget(),
+
+            if (projectStatus != null && !hideChatStatuses.contains(projectStatus)) ...[
+              const Divider(height: 40),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Iconsax.message),
+                  label: const Text("Chat with Customer"),
+                  onPressed: () {
+                    if (_myProfile != null) {
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                                projectId: widget.projectId,
+                                customerName: _projectDetails!['customer']?['name'] ?? 'Customer',
+                                myName: _myProfile!.name,
+                              )));
+                    }
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String appBarTitle = _projectDetails?['title'] ?? 'Project Details';
 
     return Scaffold(
       appBar: AppBar(
@@ -147,52 +251,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         ],
       ),
       endDrawer: _projectDetails != null ? _buildProjectDrawer() : null,
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-              : _projectDetails == null
-                  ? const Center(child: Text("Project not found."))
-                  : RefreshIndicator(
-                      onRefresh: _fetchProjectDetails,
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildInfoCard(),
-                            _buildTimelineInfo(),
-                            const SizedBox(height: 16),
-                            const SizedBox(height: 8),
-                            _buildActionWidget(),
-
-                            if (projectStatus != null && !hideChatStatuses.contains(projectStatus)) ...[
-                              const Divider(height: 40),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  icon: const Icon(Iconsax.message),
-                                  label: const Text("Chat with Customer"),
-                                  onPressed: () {
-                                    if (_myProfile != null) {
-                                      Navigator.of(context).push(MaterialPageRoute(
-                                          builder: (_) => ChatScreen(
-                                                projectId: widget.projectId,
-                                                customerName: _projectDetails!['customer']?['name'] ?? 'Customer',
-                                                myName: _myProfile!.name,
-                                              )));
-                                    }
-                                  },
-                                ),
-                              ),
-                            ],
-                            // =========================================
-                          ],
-                        ),
-                      ),
-                    ),
+      body: _buildBody(), // Dekhen, body ab kitni saaf hai!
     );
   }
-
 
   Widget _buildInfoCard() {
     final customer = _projectDetails!['customer'] ?? {};
@@ -278,6 +339,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
               title: Text(customer['name'] ?? 'N/A', style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(customer['phone_number'] ?? 'N/A'),
+              // YEH trailing property add karein
+              trailing: IconButton(
+                icon: const Icon(Iconsax.call, color: Colors.green),
+                onPressed: () {
+                  final phoneNumber = customer['phone_number'];
+                  if (phoneNumber != null) {
+                    _makePhoneCall(phoneNumber);
+                  }
+                },
+              ),
             ),
           ],
         ),
@@ -566,101 +637,46 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         );
 
+
+
+        
       case 'PHASE_PLAN_APPROVED':
-        final currentPhase = phases.firstWhere((phase) => phase['is_payment_done'] == false, orElse: () => null);
-        if (currentPhase == null) return const Card(child: ListTile(title: Text("All phases seem to be paid.")));
-
-        if (currentPhase['is_payment_done'] == false) {
-          return Card(
-            color: const Color.fromRGBO(227, 242, 253, 1),
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Iconsax.wallet_check, color: Colors.blue),
-                    title: Text("Ready for Phase ${currentPhase['phase_number']}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text("Waiting for customer to pay for this phase to start the work."),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    icon: const Icon(Iconsax.refresh),
-                    label: const Text("Check Payment Status"),
-                    onPressed: _isLoading ? null : _fetchProjectDetails,
-                  )
-                ],
-              ),
-            ),
-          );
-        } else {
-          return Column(
-            children: [
-              Text(
-                'Payment for Phase ${currentPhase['phase_number']} received! You can start the work now.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              SlideAction(
-                text: 'Slide to Start Work for Phase ${currentPhase['phase_number']}',
-                outerColor: Colors.green,
-                onSubmit: () async { await _startWork(); },
-              ),
-            ],
-          );
-        }
-
-      case 'PHASE_COMPLETION_PENDING':
-        return const Card(
-          color: Color(0xFFFFF3CD),
-          child: ListTile(
-            leading: Icon(Iconsax.clock, color: Color(0xFF664D03)),
-            title: Text("Request Sent"),
-            subtitle: Text("Please wait while the customer accepts your work for this phase."),
-          ),
-        );
-
       case 'PHASE_DONE_WAITING_FOR_NEXT':
-        // Step 1: Agla phase dhoondho (jiska status abhi bhi PENDING hai)
-        final nextPhase = phases.firstWhere(
-            (phase) => phase['status'] == 'PENDING',
+        // Step 1: Agla phase dhoondho jiska status 'PENDING' hai
+        final phaseToStart = phases.firstWhere(
+            (p) => p['status'] == 'PENDING',
             orElse: () => null,
         );
 
-        // Agar koi agla phase nahi hai (matlab project khatam ho gaya hai)
-        if (nextPhase == null) {
-          return const Card(
-            color: Colors.green,
-            child: ListTile(
-              leading: Icon(Iconsax.verify, color: Colors.green),
-              title: Text("All Phases Completed!"),
-              subtitle: Text("You can now mark the entire project as complete from the options menu."),
-            ),
-          );
+        // Agar koi pending phase nahi hai (matlab saare phase shuru ho chuke hain)
+        if (phaseToStart == null) {
+          // Ho sakta hai aakhri phase complete ho gaya ho, lekin project nahi
+          // Ya fir saare phases in-progress ya completed hain. Is case mein kuch na dikhayein.
+          return const SizedBox.shrink(); 
         }
 
-        // Step 2: Agle phase ka payment status check karo
-        final bool isNextPhasePaid = nextPhase['is_payment_done'] == true;
+        // Step 2: Ab is pending phase ka payment status check karo
+        final bool isPaid = phaseToStart['is_payment_done'] == true;
 
-        if (isNextPhasePaid) {
-          // AGAR PAYMENT HO GAYI HAI TO: Slider dikhao
+        if (isPaid) {
+          // AGAR PAYMENT HO GAYI HAI: Slider dikhao
           return Column(
             children: [
               Text(
-                'Payment for Phase ${nextPhase['phase_number']} received! You can start the work now for this phase.',
+                'Payment for Phase ${phaseToStart['phase_number']} received! You can start the work now.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 20),
               SlideAction(
-                text: 'Slide to Start Work',
+                text: 'Slide to Start Work for Phase ${phaseToStart['phase_number']}',
                 outerColor: Colors.green,
                 onSubmit: () async { await _startWork(); },
               ),
             ],
           );
         } else {
-          // AGAR PAYMENT NAHI HUI HAI TO: Payment ka intezaar karne wala card dikhao
+          // AGAR PAYMENT NAHI HUI HAI: Intezaar karne wala card dikhao
           return Card(
             color: const Color.fromRGBO(227, 242, 253, 1),
             child: Padding(
@@ -670,10 +686,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ListTile(
                     leading: const Icon(Iconsax.wallet_check, color: Colors.blue),
                     title: Text(
-                      "Waiting for Payment for Phase ${nextPhase['phase_number']}",
+                      "Ready for Phase ${phaseToStart['phase_number']}",
                       style: const TextStyle(fontWeight: FontWeight.bold)
                     ),
-                    subtitle: const Text("The previous phase is complete. Waiting for customer to pay for the next phase."),
+                    subtitle: const Text("Waiting for customer to pay for this phase to start the work."),
                   ),
                   const SizedBox(height: 10),
                   OutlinedButton.icon(
@@ -688,6 +704,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         }
       // ============================== NAYA LOGIC YAHAN KHATAM HOTA HAI ==============================
 
+      case 'PHASE_COMPLETION_PENDING':
+        return const Card(
+          color: Color(0xFFFFF3CD),
+          child: ListTile(
+            leading: Icon(Iconsax.clock, color: Color(0xFF664D03)),
+            title: Text("Request Sent"),
+            subtitle: Text("Please wait while the customer accepts your work for this phase."),
+          ),
+        );
 
       case 'WORK_IN_PROGRESS':
         return Card(

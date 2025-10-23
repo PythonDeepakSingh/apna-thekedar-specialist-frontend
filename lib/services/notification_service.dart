@@ -10,7 +10,7 @@ import 'package:apna_thekedar_specialist/onboarding/screens/select_services_scre
 import 'package:apna_thekedar_specialist/profile/screens/kyc_screen.dart';
 import 'package:apna_thekedar_specialist/profile/screens/profile_verified_screen.dart';
 import 'package:apna_thekedar_specialist/projects/screens/project_details_screen.dart';
-import 'package:apna_thekedar_specialist/projects/screens/requirement_details_view_screen.dart';
+import 'package:apna_thekedar_specialist/projects/screens/requirement_acceptance_screen.dart';
 import 'package:apna_thekedar_specialist/projects/screens/view_phase_plan_screen.dart';
 import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
 import 'package:apna_thekedar_specialist/reviews_feedback_progress/models/project_update.dart';
@@ -20,6 +20,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:apna_thekedar_specialist/onboarding/screens/welcome_screen.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../main.dart'; // flutterLocalNotificationsPlugin ko access karne ke liye
+import 'package:apna_thekedar_specialist/projects/screens/requirement_unavailable_screen.dart';
 
 class NotificationService {
   final GlobalKey<NavigatorState> navigatorKey;
@@ -37,9 +41,54 @@ class NotificationService {
       _handlePushNotificationNavigation(message.data);
     });
 
+    // lib/services/notification_service.dart
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      // Jab app khula ho aur notification aaye, to list refresh karein
-      notificationProvider.fetchNotifications();
+      print('Foreground message received: ${message.notification?.title}');
+      notificationProvider.fetchNotifications(); // List abhi bhi refresh hogi
+    
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+    
+      // Agar notification hai, to local notification dikhao
+      if (notification != null && android != null) {
+        // Zaroori: Requirement channel ke liye sound
+        AndroidNotificationDetails androidPlatformChannelSpecifics;
+        if (message.data['notification_type'] == 'NEW_REQUIREMENT') {
+          androidPlatformChannelSpecifics = const AndroidNotificationDetails(
+            'requirement_channel', // Channel ID jo MainActivity.kt mein banaya tha
+            'New Requirements', // Channel Name
+            channelDescription: 'Channel for new job requirement alerts',
+            importance: Importance.max,
+            priority: Priority.high,
+            playSound: true,
+            // Custom sound (agar MainActivity.kt mein set kiya hai)
+            sound: RawResourceAndroidNotificationSound('notification_sound'),
+            ticker: 'ticker',
+          );
+        } else {
+          // Baaki sabke liye default channel
+           androidPlatformChannelSpecifics = const AndroidNotificationDetails(
+            'default_channel', // Default Channel ID
+            'General Notifications',
+            channelDescription: 'Default channel for app notifications',
+            importance: Importance.defaultImportance, // Default importance
+            priority: Priority.defaultPriority,
+            playSound: true, // Default sound bajega
+            ticker: 'ticker',
+          );
+        }
+    
+        NotificationDetails platformChannelSpecifics =
+            NotificationDetails(android: androidPlatformChannelSpecifics);
+    
+        flutterLocalNotificationsPlugin.show(
+          notification.hashCode, // Unique ID
+          notification.title,
+          notification.body,
+          platformChannelSpecifics,
+          payload: json.encode(message.data), // Click action ke liye data
+        );
+      }
     });
   }
 
@@ -92,10 +141,67 @@ class NotificationService {
       switch (notification.notificationType) {
         case 'NEW_REQUIREMENT':
           if (notification.relatedProjectId != null) {
-            // Requirement details fetch karke screen par bhejein
-            final reqData = await apiService.get('/projects/requirements/${notification.relatedProjectId}/');
-            Navigator.pop(context); // Loading indicator hatayein
-            Navigator.push(context, MaterialPageRoute(builder: (_) => RequirementDetailViewScreen(requirementData: json.decode(reqData.body))));
+            try {
+              // Project details fetch karein
+              final projectResponse = await apiService.get('/projects/${notification.relatedProjectId}/details/');
+              if (projectResponse.statusCode != 200) {
+                 // Agar project details hi na mile (ho sakta hai delete ho gaya ho)
+                 Navigator.pop(context); // Loading hatayein
+                 Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementUnavailableScreen()));
+                 break; // Aage kuch na karein
+              }
+              final projectData = json.decode(projectResponse.body);
+              final requirementData = projectData['requirement'];
+
+              // === YEH NAYA CHECK ADD KIYA GAYA HAI ===
+              // Check karo ki project ka status abhi bhi REQ_SENT hai ya nahi
+              if (projectData['status'] != 'REQ_SENT' || projectData['specialist'] != null) {
+                 Navigator.pop(context); // Loading hatayein
+                 // Agar status REQ_SENT nahi hai, to Unavailable screen dikhao
+                 Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementUnavailableScreen()));
+                 break; // Aage kuch na karein
+              }
+              // ===========================================
+
+              if (requirementData == null || requirementData['id'] == null) {
+                throw Exception('Requirement data not found in project details');
+              }
+
+              final Map<String, dynamic> dataForAcceptanceScreen = {
+                ...requirementData, // Requirement ki saari keys (id, description, etc.)
+                'project': {      // Project ki details ko 'project' key ke andar nest karein
+                  'id': projectData['id'],
+                  'title': projectData['title'],
+                  'address': projectData['address'],
+                  'pincode': projectData['pincode'],
+                  'property_type': projectData['property_type'], // Poora object bhej dein ya sirf naam
+                  'customer': projectData['customer'], // Poora customer object
+                  // Add any other project details needed by AcceptanceScreen
+                }
+              };
+              // ===================================
+              
+              Navigator.pop(context); // Loading indicator hatayein
+              
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RequirementAcceptanceScreen(
+                    requirementId: requirementData['id'],
+                    projectId: notification.relatedProjectId!,
+                    initialData: dataForAcceptanceScreen, // <-- Ab sahi structure wala data jayega
+                  ),
+                ),
+              );
+
+            } catch (e) {
+               Navigator.pop(context); // Error aane par bhi loading hatayein
+               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not load requirement details: $e')));
+               // Optionally navigate to unavailable screen on error too
+               // Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementUnavailableScreen()));
+            }
+          } else {
+             Navigator.pop(context); // Agar project ID hi na ho
           }
           break;
 
@@ -163,6 +269,14 @@ class NotificationService {
             Navigator.pop(context); // Loading indicator hatayein
             Navigator.push(context, MaterialPageRoute(builder: (_) => UpdateHistoryScreen(updates: updates)));
           }
+          break;
+        case 'WELCOME':
+          Navigator.pop(context); // Loading indicator hatayein
+          // Ab Welcome Screen par le jayein
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+          );
           break;
 
         default:

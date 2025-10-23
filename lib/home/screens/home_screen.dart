@@ -13,6 +13,10 @@ import 'package:provider/provider.dart';
 import 'package:apna_thekedar_specialist/notifications/notification_model.dart';
 import 'package:apna_thekedar_specialist/profile/screens/my_earnings_screen.dart';
 
+// === Naye Imports ===
+import 'dart:io'; 
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -23,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _dashboardData;
   bool _isLoading = true;
+  String? _errorType; // === Naya variable ===
 
   @override
   void initState() {
@@ -32,46 +37,55 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-Future<void> _initializeScreen() async {
+  // === Is function ko poora badal diya gaya hai ===
+  Future<void> _initializeScreen() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
+      _errorType = null;
     });
 
-    final notificationService = Provider.of<NotificationService>(context, listen: false);
-    final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
-
-    // === YAHAN BADLAAV KIYA GAYA HAI ===
     try {
-      // Saare functions ko try block ke andar daal dein
+      // Step 1: Internet check
+      final result = await InternetAddress.lookup('google.com');
+      if (result.isEmpty || result[0].rawAddress.isEmpty) {
+        throw 'no_internet';
+      }
+      
+      final notificationService = Provider.of<NotificationService>(context, listen: false);
+      final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
+
+      // Step 2: API calls
       await _fetchDashboardData();
       await notificationProvider.fetchNotifications();
       await notificationService.connectWebSocket();
+
+    } on SocketException catch (_) {
+      _errorType = 'no_internet';
     } catch (e) {
-      // Catch block khaali rahega. Humein bas error ko pakadna hai.
-      // Global system error screen dikha dega.
-      print("Error during initialization caught locally: $e");
+      if (mounted) {
+        _errorType = e.toString() == 'no_internet' ? 'no_internet' : 'server_error';
+      }
     } finally {
-      // Yeh block hamesha chalega, chahe error aaye ya na aaye
       if (mounted) {
         setState(() {
-          _isLoading = false; // Loading ko band kar dega
+          _isLoading = false;
         });
       }
     }
-    // ===================================
   }
 
+  // === Is function me thoda badlav hai ===
   Future<void> _fetchDashboardData() async {
     final apiService = Provider.of<ApiService>(context, listen: false);
     final response = await apiService.get('/specialist/dashboard/');
-    if (mounted && response.statusCode == 200) {
-      setState(() => _dashboardData = json.decode(response.body));
+    if (mounted) {
+      if (response.statusCode == 200) {
+        setState(() => _dashboardData = json.decode(response.body));
+      } else {
+        // Agar API call fail ho to error throw karein
+        throw 'server_error';
+      }
     }
   }
 
@@ -83,14 +97,11 @@ Future<void> _initializeScreen() async {
 
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ProjectDetailScreen(projectId: projectId),
-    ));
+    )).then((_) => _initializeScreen()); // Wapas aane par screen refresh karein
   }
 
   @override
   Widget build(BuildContext context) {
-    final notificationProvider = Provider.of<NotificationProvider>(context);
-    final unreadNotifications = notificationProvider.notifications.where((n) => !n.isRead).toList();
-
     return Scaffold(
       drawer: const HomeDrawer(),
       appBar: AppBar(
@@ -106,83 +117,107 @@ Future<void> _initializeScreen() async {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _initializeScreen,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Welcome, ${_dashboardData?['user_name'] ?? 'Specialist'}!",
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        ...unreadNotifications.take(2).map((notification) {
-                          return _buildNotificationCard(notification);
-                        }).toList(),
-                        
-                        if (unreadNotifications.length > 2)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(onPressed: (){
-                              Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => const NotificationScreen())
-                              );
-                            }, child: const Text("View all notifications"))
-                          ),
-                        const SizedBox(height: 16),
-
-                        GridView.count(
-                          crossAxisCount: 3, 
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.9,
-                          children: [
-                            _buildGridCard(
-                              context,
-                              icon: Iconsax.document_download,
-                              label: "New Requirements",
-                              onTap: () {
-                                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RequirementListScreen()));
-                              },
-                            ),
-                            _buildGridCard(
-                              context,
-                              icon: Iconsax.folder_open,
-                              label: "My Jobs",
-                              // === COUNT YAHAN SE HATA DIYA GAYA HAI ===
-                              onTap: () {
-                                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyJobsScreen()));
-                              },
-                            ),
-                            _buildGridCard(
-                              context,
-                              icon: Iconsax.wallet_money,
-                              label: "My Earnings",
-                              onTap: () {
-                                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyEarningsScreen()));
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        
-                        _buildLatestRunningProject(),
-                      ],
-                    ),
-                  ),
-                ),
+      body: _buildBody(), // Ab body me yeh naya widget call hoga
     );
   }
 
+  // === Yeh poora naya function hai UI ko manage karne ke liye ===
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorType != null) {
+      return AttractiveErrorWidget(
+        imagePath: _errorType == 'no_internet' ? 'assets/no_internet.png' : 'assets/server_error.png',
+        title: _errorType == 'no_internet' ? "Oops! No Internet" : "Something Went Wrong",
+        message: _errorType == 'no_internet'
+            ? "Please check your internet connection and try again."
+            : "We're having trouble connecting to our servers. Please try again later.",
+        buttonText: "Retry",
+        onRetry: _initializeScreen,
+      );
+    }
+
+    // Normal UI jab sab kuch theek ho
+    final notificationProvider = Provider.of<NotificationProvider>(context);
+    final unreadNotifications = notificationProvider.notifications.where((n) => !n.isRead).toList();
+
+    return RefreshIndicator(
+      onRefresh: _initializeScreen,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Welcome, ${_dashboardData?['user_name'] ?? 'Specialist'}!",
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)
+            ),
+            const SizedBox(height: 16),
+            
+            ...unreadNotifications.take(2).map((notification) {
+              return _buildNotificationCard(notification);
+            }).toList(),
+            
+            if (unreadNotifications.length > 2)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(onPressed: (){
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const NotificationScreen())
+                  );
+                }, child: const Text("View all notifications"))
+              ),
+            const SizedBox(height: 16),
+
+            GridView.count(
+              crossAxisCount: 3, 
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.9,
+              children: [
+                _buildGridCard(
+                  context,
+                  icon: Iconsax.document_download,
+                  label: "New Requirements",
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RequirementListScreen()));
+                  },
+                ),
+                _buildGridCard(
+                  context,
+                  icon: Iconsax.folder_open,
+                  label: "My Jobs",
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyJobsScreen()));
+                  },
+                ),
+                _buildGridCard(
+                  context,
+                  icon: Iconsax.wallet_money,
+                  label: "My Earnings",
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyEarningsScreen()));
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            _buildLatestRunningProject(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // === Baki ke saare functions waise hi rahenge ===
   Widget _buildNotificationCard(NotificationModel notification) {
+    // ... (no changes here)
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       color: Colors.blue.shade50,
@@ -198,6 +233,7 @@ Future<void> _initializeScreen() async {
   }
 
   Widget _buildLatestRunningProject() {
+    // ... (no changes here)
     if (_dashboardData == null || _dashboardData!['latest_running_project'] == null) {
       return const Card(
         child: Padding(
@@ -245,8 +281,8 @@ Future<void> _initializeScreen() async {
     );
   }
 
-  // === _buildGridCard ab count ke bina bhi kaam karega ===
   Widget _buildGridCard(BuildContext context, {required IconData icon, required String label, int? count, required VoidCallback onTap}) {
+    // ... (no changes here)
     const Color darkColor = Color(0xFF4B2E1E);
     return Card(
       elevation: 2,
@@ -257,10 +293,8 @@ Future<void> _initializeScreen() async {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Count null hone par yeh text nahi banega
             if (count != null)
               Text(count.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: darkColor)),
-            // Icon ka size ab count par depend karega
             Icon(icon, size: count != null ? 30 : 40, color: darkColor),
             const SizedBox(height: 12),
             Text(label, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -269,4 +303,4 @@ Future<void> _initializeScreen() async {
       ),
     );
   }
-}  
+}
