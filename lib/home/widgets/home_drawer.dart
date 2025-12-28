@@ -1,4 +1,4 @@
-// lib/home/widgets/home_drawer.dart (Updated with Error Handling)
+// lib/home/widgets/home_drawer.dart (UPDATED - Clean Version)
 import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:apna_thekedar_specialist/services/auth_service.dart';
@@ -6,11 +6,14 @@ import 'package:apna_thekedar_specialist/splash_screen.dart';
 import 'package:apna_thekedar_specialist/profile/screens/edit_profile_screen.dart';
 import 'package:apna_thekedar_specialist/core/models/user_profile.dart';
 import 'package:apna_thekedar_specialist/profile/screens/notification_settings_screen.dart';
-import 'package:apna_thekedar_specialist/profile/screens/my_earnings_screen.dart';
+// MyEarningsScreen import hata diya gaya hai
 import 'package:apna_thekedar_specialist/profile/screens/kyc_screen.dart';
 import 'package:apna_thekedar_specialist/onboarding/screens/select_services_screen.dart';
-import 'dart:io'; // Naya import
+import 'dart:io'; 
 import 'package:apna_thekedar_specialist/support/support_screen.dart';
+import 'package:apna_thekedar_specialist/api/api_service.dart';
+import 'package:provider/provider.dart';
+import 'package:apna_thekedar_specialist/services/location_service.dart'; // LocationService import
 
 class HomeDrawer extends StatefulWidget {
   const HomeDrawer({super.key});
@@ -21,8 +24,11 @@ class HomeDrawer extends StatefulWidget {
 
 class _HomeDrawerState extends State<HomeDrawer> {
   UserProfile? _userProfile;
-  bool _isLoading = true; // Naya variable
-  bool _hasError = false; // Naya variable
+  bool _isLoading = true;
+  bool _hasError = false;
+  
+  bool _isAvailable = false;
+  bool _isSwitchLoading = false;
 
   @override
   void initState() {
@@ -30,9 +36,7 @@ class _HomeDrawerState extends State<HomeDrawer> {
     _loadUserProfile();
   }
 
-  // === Is function ko update kiya gaya hai ===
   Future<void> _loadUserProfile() async {
-    // Shuru me error false set karein
     if(mounted) setState(() { _isLoading = true; _hasError = false; });
     
     try {
@@ -46,6 +50,7 @@ class _HomeDrawerState extends State<HomeDrawer> {
         if (profile != null) {
           setState(() {
             _userProfile = profile;
+            _isAvailable = profile.isAvailable;
           });
         } else {
           throw 'server_error';
@@ -58,7 +63,50 @@ class _HomeDrawerState extends State<HomeDrawer> {
     }
   }
 
+  Future<void> _toggleAvailability(bool newValue) async {
+    setState(() => _isSwitchLoading = true);
+    
+    final apiService = Provider.of<ApiService>(context, listen: false);
+    final locationService = Provider.of<LocationService>(context, listen: false);
+
+    try {
+      final response = await apiService.patch(
+        '/specialist/profile/professional/update/', 
+        {'is_available': newValue}
+      );
+
+      if (mounted) {
+        if (response.statusCode == 200) {
+          setState(() {
+            _isAvailable = newValue;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(newValue ? 'You are now Online!' : 'You are now Offline.'),
+            backgroundColor: newValue ? Colors.green : Colors.orange,
+          ));
+          
+          if (newValue) {
+            locationService.startLocationUpdates();
+          } else {
+            locationService.stopLocationUpdates();
+          }
+
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error updating status. Please try again.')));
+        }
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+    } finally {
+      if (mounted) setState(() => _isSwitchLoading = false);
+    }
+  }
+
   void _logout() async {
+    // Logout se pehle "Offline" set karein
+    if (_isAvailable) {
+      await _toggleAvailability(false);
+    }
     await AuthService().logout();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -68,8 +116,10 @@ class _HomeDrawerState extends State<HomeDrawer> {
     }
   }
 
+   // === YEH FUNCTION AB ISTEMAAL NAHI HO RAHA ===
+   /*
    Widget _buildRatingTile(String title, double rating) {
-    return ListTile(
+     return ListTile(
       dense: true,
       visualDensity: VisualDensity.compact,
       leading: Icon(Iconsax.star_1, color: Colors.amber.shade700, size: 20),
@@ -79,7 +129,9 @@ class _HomeDrawerState extends State<HomeDrawer> {
         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
       ),
     );
-  }
+   }
+   */
+   // ============================================
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +140,6 @@ class _HomeDrawerState extends State<HomeDrawer> {
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
-          // === UserAccountsDrawerHeader ko update kiya gaya hai ===
           UserAccountsDrawerHeader(
             accountName: _isLoading
                 ? const Text("Loading...")
@@ -119,12 +170,27 @@ class _HomeDrawerState extends State<HomeDrawer> {
             decoration: const BoxDecoration(color: darkColor),
           ),
 
-          // Baaki ka UI
-          if (!_isLoading && !_hasError && _userProfile != null) ...[
-            _buildRatingTile("Work Rating", _userProfile!.workRating),
-            _buildRatingTile("Behavior Rating", _userProfile!.behaviorRating),
-            const Divider(),
-          ],
+          if (!_isLoading && !_hasError)
+            SwitchListTile(
+              title: Text(
+                _isAvailable ? 'You are Online' : 'You are Offline',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: _isAvailable ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+              subtitle: Text(_isAvailable ? 'Ready for new jobs' : 'Not receiving new jobs'),
+              value: _isAvailable,
+              onChanged: _isSwitchLoading ? null : _toggleAvailability,
+              secondary: _isSwitchLoading 
+                ? const CircularProgressIndicator() 
+                : Icon(_isAvailable ? Iconsax.status : Iconsax.danger, color: _isAvailable ? Colors.green : Colors.red),
+            ),
+          
+          // === RATINGS YAHAN SE HATA DI GAYI HAIN ===
+          const Divider(),
+          // ==========================================
+
           ListTile(
             leading: const Icon(Iconsax.document_upload),
             title: const Text('KYC and Documentation'),
@@ -138,25 +204,16 @@ class _HomeDrawerState extends State<HomeDrawer> {
           ),
           ListTile(
             leading: const Icon(Iconsax.profile_circle),
-            title: const Text('Edit Profile'),
+            title: const Text('My Profile'), // "Edit Profile" se "My Profile" kar diya
             onTap: () async {
               Navigator.pop(context);
               await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EditProfileScreen()));
-              _loadUserProfile();
+              _loadUserProfile(); // Wapas aane par profile reload karein (taaki switch sync rahe)
             },
           ),
-          ListTile(
-            leading: const Icon(Iconsax.wallet_2),
-            title: const Text('My Earnings'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const MyEarningsScreen()),
-              );
-            },
-          ),
-
+          
+          // === "MY EARNINGS" YAHAN SE HATA DIYA GAYA HAI ===
+          
           ListTile(
             leading: const Icon(Iconsax.notification_bing),
             title: const Text('Notification Settings'),
@@ -180,8 +237,7 @@ class _HomeDrawerState extends State<HomeDrawer> {
             leading: const Icon(Iconsax.message_question),
             title: const Text('Support'),
             onTap: () {
-              Navigator.pop(context); // Pehle drawer band karein
-              // Hum yeh nayi screen agle step mein banayenge
+              Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SupportScreen()),

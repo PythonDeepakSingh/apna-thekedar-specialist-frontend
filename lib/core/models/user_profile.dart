@@ -13,6 +13,7 @@ class UserProfile {
   final List<dynamic> addresses; // Yeh addresses ki list store karega
   final double workRating;
   final double behaviorRating;
+  final bool isAvailable;
 
   UserProfile({
     required this.name,
@@ -24,6 +25,7 @@ class UserProfile {
     this.addresses = const [], // Default value ek khaali list hai
     this.workRating = 0.0,
     this.behaviorRating = 0.0,
+    required this.isAvailable,
   });
 
   // Factory constructor ko update karein
@@ -39,6 +41,7 @@ class UserProfile {
       addresses: specialistData['addresses'] as List? ?? [], // API se aane waale addresses
       workRating: double.tryParse(specialistData['work_rating'].toString()) ?? 0.0,
       behaviorRating: double.tryParse(specialistData['behavior_rating'].toString()) ?? 0.0,
+      isAvailable: specialistData['is_available'] ?? false,
     );
   }
 

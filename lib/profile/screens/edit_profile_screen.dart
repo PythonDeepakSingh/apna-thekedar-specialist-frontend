@@ -1,14 +1,14 @@
-// lib/profile/screens/edit_profile_screen.dart (Updated with Non-Editable Fields & Error Handling)
+// lib/profile/screens/edit_profile_screen.dart (UPDATED with Ratings)
 import 'dart:convert';
-import 'dart:io'; // Image File aur InternetAddress ke liye
+import 'dart:io';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
-import 'package:apna_thekedar_specialist/core/models/user_profile.dart'; // UserProfile ke liye
-import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart'; // Error handling ke liye
+import 'package:apna_thekedar_specialist/core/models/user_profile.dart';
+import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 import 'package:apna_thekedar_specialist/main_nav_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart'; // ApiService access ke liye
+import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 
 class EditProfileScreen extends StatefulWidget {
@@ -21,26 +21,28 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController(); // Email abhi bhi non-editable rahega
+  final _emailController = TextEditingController();
   final _bioController = TextEditingController();
-  // Experience ke liye controller abhi bhi rakhenge data display ke liye
   final _experienceController = TextEditingController(text: "Loading...");
 
   File? _profileImage;
   String? _networkProfileImageUrl;
   bool _isLoading = true;
-  ApiService? _apiService; // ApiService ko state mein rakhenge
+  ApiService? _apiService;
   String? _errorType;
 
-  // Address display ke liye state variables
   UserProfile? _userProfile;
   String _permanentAddress = "Loading...";
   String _currentAddress = "Loading...";
+  
+  // === NAYE VARIABLES RATINGS KE LIYE ===
+  double _workRating = 0.0;
+  double _behaviorRating = 0.0;
+  // ======================================
 
   @override
   void initState() {
     super.initState();
-    // initState mein context use nahi kar sakte, isliye addPostFrameCallback
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _apiService = Provider.of<ApiService>(context, listen: false);
       _loadProfileData();
@@ -64,42 +66,42 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
 
     try {
-      // Internet Check
       final result = await InternetAddress.lookup('google.com');
       if (result.isEmpty || result[0].rawAddress.isEmpty) {
         throw 'no_internet';
       }
 
-      // API Calls
       final responses = await Future.wait([
         _apiService!.get('/auth/profile/'),
-        UserProfile.loadFromApi(), // UserProfile model se fetch karein
+        UserProfile.loadFromApi(),
       ]);
 
       if (mounted) {
         final userResponse = responses[0] as http.Response;
-        _userProfile = responses[1] as UserProfile?; // Profile ko save karein
+        _userProfile = responses[1] as UserProfile?;
 
         if (userResponse.statusCode == 200 && _userProfile != null) {
           final userData = json.decode(userResponse.body);
 
-          // Update controllers and state variables
           _nameController.text = userData['name'] ?? '';
           _emailController.text = userData['email'] ?? 'Not provided';
           _networkProfileImageUrl = userData['profile_photo'];
           _bioController.text = _userProfile!.bio ?? '';
           _experienceController.text = _userProfile!.experienceYears?.toString() ?? '0';
 
-          // Addresses ko find karke set karein
           _permanentAddress = _userProfile!.addresses.firstWhere(
               (addr) => addr['address_type'] == 'PERMANENT',
               orElse: () => {'address': 'Not set'})['address'];
           _currentAddress = _userProfile!.addresses.firstWhere(
               (addr) => addr['address_type'] == 'CURRENT',
               orElse: () => {'address': 'Not set'})['address'];
+              
+          // === NAYI LINES RATINGS SET KARNE KE LIYE ===
+          _workRating = _userProfile!.workRating;
+          _behaviorRating = _userProfile!.behaviorRating;
+          // ===========================================
 
         } else {
-          // Agar koi response fail hota hai
           throw 'server_error';
         }
       }
@@ -109,7 +111,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         _errorType = e.toString() == 'server_error' ? 'server_error' : 'unknown';
       }
-      print("Error loading profile data: $e"); // Debugging ke liye error print karein
+      print("Error loading profile data: $e");
     } finally {
       if (mounted) {
         setState(() { _isLoading = false; });
@@ -118,6 +120,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _pickImage() async {
+    // ... (yeh function waise hi rahega) ...
     showModalBottomSheet(
       context: context,
       builder: (BuildContext context) {
@@ -153,6 +156,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _saveChanges() async {
+    // ... (yeh function waise hi rahega) ...
     if (!_formKey.currentState!.validate() || _apiService == null) {
       return;
     }
@@ -206,8 +210,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  // Read-only field banane ke liye helper widget
   Widget _buildReadOnlyField({required String label, required String value, required IconData icon}) {
+    // ... (yeh function waise hi rahega) ...
     return InputDecorator(
       decoration: InputDecoration(
         labelText: label,
@@ -232,11 +236,46 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
     );
   }
+  
+  // === YEH NAYA WIDGET HAI RATING CARD DIKHANE KE LIYE ===
+  Widget _buildRatingCard(String title, double rating, IconData icon, Color color) {
+    return Expanded(
+      child: Card(
+        elevation: 0,
+        color: color.withOpacity(0.1),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: color.withOpacity(0.3)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 8),
+              Text(title, style: TextStyle(fontSize: 14, color: color.withOpacity(0.9))),
+              Text(
+                rating.toStringAsFixed(1),
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  // =======================================================
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit Profile')),
+      appBar: AppBar(title: const Text('My Profile')), // Title change
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorType != null
@@ -270,7 +309,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             Positioned(
                               bottom: 0,
                               right: 0,
-                              child: GestureDetector( // IconButton ke bajaye GestureDetector
+                              child: GestureDetector(
                                 onTap: _pickImage,
                                 child: CircleAvatar(
                                   radius: 20,
@@ -281,7 +320,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 24),
+                        
+                        // === NAYE RATING CARDS YAHAN ADD KIYE HAIN ===
+                        Row(
+                          children: [
+                            _buildRatingCard('Work Rating', _workRating, Iconsax.star_1, Colors.amber.shade700),
+                            const SizedBox(width: 16),
+                            _buildRatingCard('Behavior Rating', _behaviorRating, Iconsax.like_1, Colors.blue.shade700),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        // ============================================
 
                         // Editable Fields
                         TextFormField(
@@ -337,7 +387,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _isLoading ? null : _saveChanges, // Loading state ko yahan handle karein
+                            onPressed: _isLoading ? null : _saveChanges,
                             child: const Text('Save Changes'),
                           ),
                         ),

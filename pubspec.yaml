@@ -35,6 +35,7 @@ dependencies:
   package_info_plus: ^9.0.0
   connectivity_plus: ^6.0.3
   permission_handler: ^11.3.1
+  audioplayers: ^6.0.0
   
 dev_dependencies:
   flutter_test:
@@ -52,6 +53,8 @@ flutter:
     - assets/no_job.png
     - assets/no_jobs.png
     - assets/server_error.png
+    - assets/notification_sound.ogg
+
 
 
 flutter_launcher_icons:

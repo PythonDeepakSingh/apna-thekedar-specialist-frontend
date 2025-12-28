@@ -1,3 +1,4 @@
+// lib/home/screens/home_screen.dart (UPDATED)
 import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:apna_thekedar_specialist/home/widgets/home_drawer.dart';
@@ -12,11 +13,13 @@ import 'package:apna_thekedar_specialist/providers/notification_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:apna_thekedar_specialist/notifications/notification_model.dart';
 import 'package:apna_thekedar_specialist/profile/screens/my_earnings_screen.dart';
-
-// === Naye Imports ===
 import 'dart:io'; 
 import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
+// Naye Imports
+import 'package:apna_thekedar_specialist/projects/screens/short_service_detail_screen.dart';
+import 'package:intl/intl.dart';
 
+// HomeScreen class (StatefulWidget) waise hi rahegi
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -24,10 +27,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+
+// === IS POORI CLASS KO REPLACE KAREIN ===
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _dashboardData;
   bool _isLoading = true;
-  String? _errorType; // === Naya variable ===
+  String? _errorType;
 
   @override
   void initState() {
@@ -37,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // === Is function ko poora badal diya gaya hai ===
   Future<void> _initializeScreen() async {
     if (!mounted) return;
     setState(() {
@@ -46,7 +50,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      // Step 1: Internet check
       final result = await InternetAddress.lookup('google.com');
       if (result.isEmpty || result[0].rawAddress.isEmpty) {
         throw 'no_internet';
@@ -55,7 +58,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final notificationService = Provider.of<NotificationService>(context, listen: false);
       final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
 
-      // Step 2: API calls
       await _fetchDashboardData();
       await notificationProvider.fetchNotifications();
       await notificationService.connectWebSocket();
@@ -75,7 +77,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // === Is function me thoda badlav hai ===
   Future<void> _fetchDashboardData() async {
     final apiService = Provider.of<ApiService>(context, listen: false);
     final response = await apiService.get('/specialist/dashboard/');
@@ -83,21 +84,33 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         setState(() => _dashboardData = json.decode(response.body));
       } else {
-        // Agar API call fail ho to error throw karein
         throw 'server_error';
       }
     }
   }
 
-  void _handleRunningProjectTap() {
-    final project = _dashboardData?['latest_running_project'];
+  // YEH FUNCTION AB SIRF LONG PROJECT HANDLE KAREGA
+  void _handleLongProjectTap() {
+    final project = _dashboardData?['active_long_project'];
     if (project == null) return;
     
     final projectId = project['id'];
 
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ProjectDetailScreen(projectId: projectId),
-    )).then((_) => _initializeScreen()); // Wapas aane par screen refresh karein
+    )).then((_) => _initializeScreen());
+  }
+  
+  // YEH NAYA FUNCTION SHORT SERVICE HANDLE KAREGA
+  void _handleShortServiceTap() {
+    final job = _dashboardData?['upcoming_short_service'];
+    if (job == null) return;
+    
+    final bookingId = job['id'];
+
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ShortServiceDetailScreen(bookingId: bookingId),
+    )).then((_) => _initializeScreen());
   }
 
   @override
@@ -117,11 +130,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: _buildBody(), // Ab body me yeh naya widget call hoga
+      body: _buildBody(),
     );
   }
 
-  // === Yeh poora naya function hai UI ko manage karne ke liye ===
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -139,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // Normal UI jab sab kuch theek ho
+    // Normal UI
     final notificationProvider = Provider.of<NotificationProvider>(context);
     final unreadNotifications = notificationProvider.notifications.where((n) => !n.isRead).toList();
 
@@ -191,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildGridCard(
                   context,
                   icon: Iconsax.folder_open,
-                  label: "My Jobs",
+                  label: "My Jobs", // Label update kar diya
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyJobsScreen()));
                   },
@@ -208,14 +220,17 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 24),
             
-            _buildLatestRunningProject(),
+            // === YAHAN BADA CHANGE HAI ===
+            _buildActiveLongProjectCard(), // Card 1
+            const SizedBox(height: 16),
+            _buildUpcomingShortServiceCard(), // Card 2
+            // ===========================
           ],
         ),
       ),
     );
   }
 
-  // === Baki ke saare functions waise hi rahenge ===
   Widget _buildNotificationCard(NotificationModel notification) {
     // ... (no changes here)
     return Card(
@@ -231,56 +246,111 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  Widget _buildLatestRunningProject() {
-    // ... (no changes here)
-    if (_dashboardData == null || _dashboardData!['latest_running_project'] == null) {
+  
+  // === YEH FUNCTION AB 'ACTIVE LONG PROJECT' KE LIYE HAI ===
+  Widget _buildActiveLongProjectCard() {
+    if (_dashboardData == null || _dashboardData!['active_long_project'] == null) {
       return const Card(
+        color: Colors.white,
+        elevation: 1,
         child: Padding(
           padding: EdgeInsets.all(16.0),
           child: Row(
             children: [
-              Icon(Iconsax.play_circle, color: Colors.grey),
+              Icon(Iconsax.folder_open, color: Colors.grey),
               SizedBox(width: 16),
-              Text("No active projects currently.", style: TextStyle(fontStyle: FontStyle.italic)),
+              Text("No active long projects.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
             ],
           ),
         ),
       );
     }
 
-    final project = _dashboardData!['latest_running_project'];
-    
-    final statusValue = project['status'];
-    String statusText = 'UNKNOWN';
-
-    if (statusValue is String && statusValue.isNotEmpty) {
-      statusText = statusValue.replaceAll('_', ' ');
-    }
+    final project = _dashboardData!['active_long_project'];
+    final statusText = (project['status'] as String? ?? 'UNKNOWN').replaceAll('_', ' ');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          "ACTIVE PROJECT",
-          style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+          "ACTIVE LONG PROJECT",
+          style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, letterSpacing: 0.5),
         ),
         const SizedBox(height: 8),
         Card(
           elevation: 4,
           child: ListTile(
             contentPadding: const EdgeInsets.all(16),
-            leading: const Icon(Iconsax.play_circle, color: Colors.blue, size: 30),
+            leading: const Icon(Iconsax.folder_open, color: Colors.blue, size: 30),
             title: Text(project['title'] ?? 'No Title', style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text("Status: $statusText"),
             trailing: const Icon(Iconsax.arrow_right_3),
-            onTap: _handleRunningProjectTap,
+            onTap: _handleLongProjectTap,
           ),
         ),
       ],
     );
   }
 
+  // === YEH NAYA FUNCTION 'UPCOMING SHORT SERVICE' KE LIYE HAI ===
+  Widget _buildUpcomingShortServiceCard() {
+     if (_dashboardData == null || _dashboardData!['upcoming_short_service'] == null) {
+      return const Card(
+        color: Colors.white,
+        elevation: 1,
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Icon(Iconsax.flash_1, color: Colors.grey),
+              SizedBox(width: 16),
+              Text("No upcoming short jobs.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final job = _dashboardData!['upcoming_short_service'];
+    final statusText = (job['status'] as String? ?? 'UNKNOWN').replaceAll('_', ' ');
+    
+    String bookingTimeText = "Unknown Time";
+    if (job['booking_time'] != null) {
+      final bookingTime = DateTime.parse(job['booking_time']).toLocal();
+      // Check karo ki "Right Now" hai ya nahi
+      if (bookingTime.isBefore(DateTime.now().add(const Duration(minutes: 30)))) {
+        bookingTimeText = "Right Now";
+      } else {
+        bookingTimeText = DateFormat('dd MMM, hh:mm a').format(bookingTime);
+      }
+    }
+
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "UPCOMING SHORT JOB",
+          style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 4,
+          color: Colors.blue.shade50, // Short jobs ko alag color
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            leading: const Icon(Iconsax.flash_1, color: Colors.blue, size: 30),
+            title: Text(job['item_name'] ?? 'No Title', style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text("Time: $bookingTimeText\nStatus: $statusText"),
+            isThreeLine: true,
+            trailing: const Icon(Iconsax.arrow_right_3),
+            onTap: _handleShortServiceTap,
+          ),
+        ),
+      ],
+    );
+  }
+  
   Widget _buildGridCard(BuildContext context, {required IconData icon, required String label, int? count, required VoidCallback onTap}) {
     // ... (no changes here)
     const Color darkColor = Color(0xFF4B2E1E);

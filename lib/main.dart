@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:apna_thekedar_specialist/services/location_service.dart'; // Naya import
+
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -52,6 +54,11 @@ Future<void> main() async {
             context.read<NotificationProvider>(),
           ),
         ),
+        // Isse LocationService ko ApiService mil jaayegi
+        Provider<LocationService>(
+          create: (context) => LocationService(context.read<ApiService>()),
+        ),
+
       ],
       child: const MyApp(),
     ),

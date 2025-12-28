@@ -1,16 +1,13 @@
-// lib/onboarding/screens/select_services_screen.dart (Updated with Error Handling)
-
+// lib/onboarding/screens/select_services_screen.dart (COMPLETE CORRECTED CODE)
 import 'package:flutter/material.dart';
 import 'package:apna_thekedar_specialist/api/api_service.dart';
 import 'package:apna_thekedar_specialist/main_nav_screen.dart';
 import 'dart:convert';
 import 'package:iconsax/iconsax.dart';
-
-// === Naye Imports ===
-import 'dart:io';
+import 'dart:io'; // Sirf SocketException ke liye
 import 'package:apna_thekedar_specialist/core/widgets/attractive_error_widget.dart';
 
-// Service Connections ko aache se manage karne ke liye ek choti si class
+// Long Project Skills ke liye model
 class ServiceCategoryGroup {
   final int categoryId;
   final String categoryName;
@@ -23,12 +20,17 @@ class ServiceCategoryGroup {
   });
 }
 
-// Specialist ki select ki hui skill ko manage karne ke liye class
-class SpecialistSkill {
-  final int skillId;
-  final String status;
+// Short Service Skills ke liye model
+class ShortServiceCategoryGroup {
+  final int categoryId;
+  final String categoryName;
+  final List<dynamic> subServices;
 
-  SpecialistSkill({required this.skillId, required this.status});
+  ShortServiceCategoryGroup({
+    required this.categoryId,
+    required this.categoryName,
+    required this.subServices,
+  });
 }
 
 class SelectServicesScreen extends StatefulWidget {
@@ -38,21 +40,36 @@ class SelectServicesScreen extends StatefulWidget {
   @override
   _SelectServicesScreenState createState() => _SelectServicesScreenState();
 }
-class _SelectServicesScreenState extends State<SelectServicesScreen> {
+
+class _SelectServicesScreenState extends State<SelectServicesScreen>
+    with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
-  String? _errorType; // === Purane _error variable ko isse replace kiya hai ===
-  List<ServiceCategoryGroup> _groupedServices = [];
-  final Set<int> _selectedSkillIds = {};
-  final Map<int, String> _skillStatusMap = {};
+  String? _errorType;
+  late TabController _tabController;
+
+  List<ServiceCategoryGroup> _groupedLongServices = [];
+  List<ShortServiceCategoryGroup> _groupedShortServices = [];
+  
+  final Set<int> _selectedLongSkillIds = {};
+  final Set<int> _selectedShortSkillIds = {};
+
+  final Map<int, String> _longSkillStatusMap = {};
+  final Map<int, String> _shortSkillStatusMap = {};
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _fetchInitialData();
   }
 
-  // === Is function ko update kiya gaya hai ===
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
   Future<void> _fetchInitialData() async {
     setState(() {
       _isLoading = true;
@@ -60,26 +77,24 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
     });
 
     try {
-      final result = await InternetAddress.lookup('google.com');
-      if (result.isEmpty || result[0].rawAddress.isEmpty) {
-        throw 'no_internet';
-      }
+      // === YAHAN SE 'InternetAddress.lookup' CHECK HATA DIYA GAYA HAI ===
 
+      // 3 APIs ko ek saath call karein
       final responses = await Future.wait([
-        _apiService.get('/services/service-connections/'),
-        if (widget.isUpdating) _apiService.get('/specialist/skills/')
+        _apiService.get('/services/service-connections/'), // Long services
+        _apiService.get('/services/short-service-categories/'), // Short services
+        if (widget.isUpdating) _apiService.get('/specialist/skills/') // Selected skills
       ]);
 
       if (mounted) {
+        // Response 1: Long Services
         final servicesResponse = responses[0];
         if (servicesResponse.statusCode == 200) {
           final List<dynamic> allServices = json.decode(servicesResponse.body);
-          
           final Map<int, ServiceCategoryGroup> tempMap = {};
           for (var service in allServices) {
             final categoryId = service['category'];
             final categoryName = service['category_name'];
-            
             if (!tempMap.containsKey(categoryId)) {
               tempMap[categoryId] = ServiceCategoryGroup(
                 categoryId: categoryId,
@@ -89,79 +104,72 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
             }
             tempMap[categoryId]!.services.add(service);
           }
-
           tempMap.forEach((key, group) {
-            group.services.sort((a, b) {
-              bool isADefault = a['is_default'] ?? false;
-              bool isBDefault = b['is_default'] ?? false;
-              if (isADefault) return -1;
-              if (isBDefault) return 1;
-              return 0;
-            });
+            group.services.sort((a, b) => (a['is_default'] ?? false) ? -1 : 1);
           });
-
-          _groupedServices = tempMap.values.toList();
+          _groupedLongServices = tempMap.values.toList();
         } else {
-          throw 'server_error';
+          // Agar API fail ho, toh error throw karein
+          throw Exception('Failed to load long services: ${servicesResponse.body}');
+        }
+
+        // Response 2: Short Services
+        final shortServicesResponse = responses[1];
+        if (shortServicesResponse.statusCode == 200) {
+          final List<dynamic> allShortServices = json.decode(shortServicesResponse.body);
+          _groupedShortServices = allShortServices.map((category) {
+            return ShortServiceCategoryGroup(
+              categoryId: category['id'],
+              categoryName: category['name'],
+              subServices: category['sub_services'] ?? [],
+            );
+          }).toList();
+        } else {
+          // Agar API fail ho, toh error throw karein
+          throw Exception('Failed to load short services: ${shortServicesResponse.body}');
         }
         
+        // Response 3: Selected Skills (agar updating hai)
         if (widget.isUpdating) {
-          final skillsResponse = responses[1];
+          // Agar updating hai, toh response list mein 3 items honge
+          if (responses.length < 3) throw Exception('Skills response missing');
+          
+          final skillsResponse = responses[2];
           if (skillsResponse.statusCode == 200) {
-            final List<dynamic> specialistSkills = json.decode(skillsResponse.body);
-            for (var skill in specialistSkills) {
-              _selectedSkillIds.add(skill['skill_id']);
-              _skillStatusMap[skill['skill_id']] = skill['status'];
+            final Map<String, dynamic> specialistSkills = json.decode(skillsResponse.body);
+            
+            final List<dynamic> longSkills = specialistSkills['long_project_skills'] ?? [];
+            for (var skill in longSkills) {
+              _selectedLongSkillIds.add(skill['skill_id']);
+              _longSkillStatusMap[skill['skill_id']] = skill['status'];
+            }
+            
+            final List<dynamic> shortSkills = specialistSkills['short_service_skills'] ?? [];
+            for (var skill in shortSkills) {
+              _selectedShortSkillIds.add(skill['skill_id']);
+              _shortSkillStatusMap[skill['skill_id']] = skill['status'];
             }
           } else {
-             throw 'server_error';
+             throw Exception('Failed to load skills: ${skillsResponse.body}');
           }
         }
       }
     } on SocketException catch (_) {
+      // Agar API call fail hoti hai (internet nahi hai ya server band hai)
       _errorType = 'no_internet';
     } catch (e) {
-      if (mounted) _errorType = e.toString() == 'server_error' ? 'server_error' : 'unknown';
+      // Koi aur error
+      print("Error in _fetchInitialData: $e");
+      if (mounted) _errorType = 'server_error';
     }
+    
     if (mounted) setState(() { _isLoading = false; });
   }
 
-  // ... (_onSkillSelected aur _saveSkills functions waise hi rahenge) ...
-  void _onSkillSelected(bool? selected, dynamic tappedSkill, ServiceCategoryGroup categoryGroup) {
-    setState(() {
-      if (selected!) {
-        _selectedSkillIds.add(tappedSkill['id']);
-      } else {
-        _selectedSkillIds.remove(tappedSkill['id']);
-      }
-
-      if (categoryGroup.services.length > 1) {
-        final defaultService = categoryGroup.services.firstWhere(
-          (s) => s['is_default'] == true,
-          orElse: () => null,
-        );
-
-        if (defaultService != null) {
-          bool anyNonDefaultSelected = categoryGroup.services.any(
-            (s) => s['is_default'] == false && _selectedSkillIds.contains(s['id'])
-          );
-
-          if (anyNonDefaultSelected) {
-            _selectedSkillIds.add(defaultService['id']);
-          } else {
-            if (_skillStatusMap[defaultService['id']] != 'APPROVED') {
-                _selectedSkillIds.remove(defaultService['id']);
-            }
-          }
-        }
-      }
-    });
-  }
-
   Future<void> _saveSkills() async {
-     if (_selectedSkillIds.isEmpty) {
+     if (_selectedLongSkillIds.isEmpty && _selectedShortSkillIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one skill.')),
+        const SnackBar(content: Text('Please select at least one skill from either category.')),
       );
       return;
     }
@@ -169,7 +177,8 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
     
     try {
         final response = await _apiService.post('/specialist/skills/update/', {
-            'skill_ids': _selectedSkillIds.toList(),
+            'long_skill_ids': _selectedLongSkillIds.toList(),
+            'short_skill_ids': _selectedShortSkillIds.toList(),
         });
 
         if(mounted){
@@ -192,18 +201,58 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
             }
         }
     } catch(e) {
-        // handle error
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
     }
     if(mounted) setState(() => _isLoading = false);
   }
 
-  // === build method ko update kiya gaya hai ===
+  void _onLongSkillSelected(bool? selected, dynamic tappedSkill, ServiceCategoryGroup categoryGroup) {
+    setState(() {
+      if (selected!) {
+        _selectedLongSkillIds.add(tappedSkill['id']);
+      } else {
+        _selectedLongSkillIds.remove(tappedSkill['id']);
+      }
+      if (categoryGroup.services.length > 1) {
+        final defaultService = categoryGroup.services.firstWhere((s) => s['is_default'] == true, orElse: () => null);
+        if (defaultService != null) {
+          bool anyNonDefaultSelected = categoryGroup.services.any((s) => s['is_default'] == false && _selectedLongSkillIds.contains(s['id']));
+          if (anyNonDefaultSelected) {
+            _selectedLongSkillIds.add(defaultService['id']);
+          } else {
+            if (_longSkillStatusMap[defaultService['id']] != 'APPROVED') {
+                _selectedLongSkillIds.remove(defaultService['id']);
+            }
+          }
+        }
+      }
+    });
+  }
+  
+  void _onShortSkillSelected(bool? selected, dynamic tappedSkill) {
+    setState(() {
+      final skillId = tappedSkill['id'];
+      if (selected!) {
+        _selectedShortSkillIds.add(skillId);
+      } else {
+        _selectedShortSkillIds.remove(skillId);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isUpdating ? 'Manage Your Skills' : 'Select Your Skills'),
         automaticallyImplyLeading: widget.isUpdating,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Long Projects'),
+            Tab(text: 'Short Services'),
+          ],
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -215,49 +264,15 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
                   buttonText: "Retry",
                   onRetry: _fetchInitialData,
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: _groupedServices.length,
-                  itemBuilder: (context, index) {
-                    final categoryGroup = _groupedServices[index];
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      child: ExpansionTile(
-                        leading: const Icon(Iconsax.category, color: Color(0xFF4B2E1E)),
-                        title: Text(
-                          categoryGroup.categoryName,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        initiallyExpanded: categoryGroup.services.any((s) => _selectedSkillIds.contains(s['id'])),
-                        children: categoryGroup.services.map<Widget>((skill) {
-                          final skillId = skill['id'];
-                          final status = _skillStatusMap[skillId];
-                          final bool isApproved = status == 'APPROVED';
-                          
-                          bool isDefault = skill['is_default'] ?? false;
-                          bool shouldBeDim = isDefault && categoryGroup.services.length > 1;
-
-                          return Opacity(
-                            opacity: (shouldBeDim || isApproved) ? 0.6 : 1.0,
-                            child: CheckboxListTile(
-                              title: Text(skill['sub_service_name']),
-                              subtitle: isDefault 
-                                ? const Text('(Covers all basic tasks)') 
-                                : (isApproved ? const Text('Verified', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)) : null),
-                              value: _selectedSkillIds.contains(skillId),
-                              onChanged: (shouldBeDim || isApproved) ? null : (bool? selected) {
-                                _onSkillSelected(selected, skill, categoryGroup);
-                              },
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    );
-                  },
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildLongServicesList(),
+                    _buildShortServicesList(),
+                  ],
                 ),
       bottomNavigationBar: (_isLoading || _errorType != null)
-      ? null // Agar loading ho rahi hai ya error hai, to button mat dikhao
+      ? null
       : Padding(
           padding: const EdgeInsets.all(16.0),
           child: ElevatedButton(
@@ -267,6 +282,92 @@ class _SelectServicesScreenState extends State<SelectServicesScreen> {
               : Text(widget.isUpdating ? 'Update Skills' : 'Finish Setup'),
           ),
         ),
+    );
+  }
+
+  Widget _buildLongServicesList() {
+    if (_groupedLongServices.isEmpty) {
+      return const Center(child: Text('No long projects available.'));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16.0),
+      itemCount: _groupedLongServices.length,
+      itemBuilder: (context, index) {
+        final categoryGroup = _groupedLongServices[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: ExpansionTile(
+            leading: const Icon(Iconsax.category, color: Color(0xFF4B2E1E)),
+            title: Text(
+              categoryGroup.categoryName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            initiallyExpanded: categoryGroup.services.any((s) => _selectedLongSkillIds.contains(s['id'])),
+            children: categoryGroup.services.map<Widget>((skill) {
+              final skillId = skill['id'];
+              final status = _longSkillStatusMap[skillId];
+              final bool isApproved = status == 'APPROVED';
+              bool isDefault = skill['is_default'] ?? false;
+              bool shouldBeDim = isDefault && categoryGroup.services.length > 1;
+
+              return Opacity(
+                opacity: (shouldBeDim || isApproved) ? 0.6 : 1.0,
+                child: CheckboxListTile(
+                  title: Text(skill['sub_service_name']),
+                  subtitle: isDefault 
+                    ? const Text('(Covers all basic tasks)') 
+                    : (isApproved ? const Text('Verified', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)) : null),
+                  value: _selectedLongSkillIds.contains(skillId),
+                  onChanged: (shouldBeDim || isApproved) ? null : (bool? selected) {
+                    _onLongSkillSelected(selected, skill, categoryGroup);
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildShortServicesList() {
+     if (_groupedShortServices.isEmpty) {
+      return const Center(child: Text('No short services available.'));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16.0),
+      itemCount: _groupedShortServices.length,
+      itemBuilder: (context, index) {
+        final categoryGroup = _groupedShortServices[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: ExpansionTile(
+            leading: const Icon(Iconsax.flash_1, color: Color(0xFF4B2E1E)),
+            title: Text(
+              categoryGroup.categoryName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            initiallyExpanded: categoryGroup.subServices.any((s) => _selectedShortSkillIds.contains(s['id'])),
+            children: categoryGroup.subServices.map<Widget>((skill) {
+              final skillId = skill['id'];
+              final status = _shortSkillStatusMap[skillId];
+              final bool isApproved = status == 'APPROVED';
+
+              return Opacity(
+                opacity: isApproved ? 0.6 : 1.0,
+                child: CheckboxListTile(
+                  title: Text(skill['name']),
+                  subtitle: isApproved ? const Text('Verified', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)) : null,
+                  value: _selectedShortSkillIds.contains(skillId),
+                  onChanged: isApproved ? null : (bool? selected) {
+                    _onShortSkillSelected(selected, skill);
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
     );
   }
 }

@@ -24,6 +24,7 @@ import 'package:apna_thekedar_specialist/onboarding/screens/welcome_screen.dart'
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../main.dart'; // flutterLocalNotificationsPlugin ko access karne ke liye
 import 'package:apna_thekedar_specialist/projects/screens/requirement_unavailable_screen.dart';
+import 'package:apna_thekedar_specialist/projects/screens/short_service_acceptance_screen.dart';
 
 class NotificationService {
   final GlobalKey<NavigatorState> navigatorKey;
@@ -139,6 +140,57 @@ class NotificationService {
 
     try {
       switch (notification.notificationType) {
+
+        case 'NEW_SHORT_SERVICE_JOB':
+          if (notification.relatedProjectId != null) { // Yeh bookingId hai
+            try {
+              // Pehle Job ki details fetch karein
+              final jobResponse = await apiService.get('/projects/short-service/${notification.relatedProjectId}/details/');
+              
+              if (jobResponse.statusCode == 200) {
+                final jobData = json.decode(jobResponse.body);
+
+                // Check karein ki job abhi bhi 'BOOKED' hai ya nahi
+                if (jobData['status'] == 'BOOKED') {
+                  // Agar available hai, toh Acceptance Screen par bhejein
+                  
+                  // 'initialData' banayein (jaisa list screen banati hai)
+                  final Map<String, dynamic> initialData = {
+                    'broadcast_id': notification.id, // Notification ID daal dete hain
+                    'job_type': 'SHORT_SERVICE',
+                    'title': jobData['item'],
+                    'address': jobData['address'],
+                    'pincode': jobData['pincode'],
+                    'created_at': jobData['created_at'],
+                    'internal_job_id': jobData['id']
+                  };
+                  
+                  Navigator.pop(context); // Loading hatayein
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ShortServiceAcceptanceScreen(
+                      bookingId: notification.relatedProjectId!,
+                      initialData: initialData,
+                    ),
+                  ));
+                } else {
+                  // Agar job 'ASSIGNED' ya 'CANCELLED' ho chuki hai
+                  Navigator.pop(context); // Loading hatayein
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementUnavailableScreen()));
+                }
+              } else {
+                // Agar job hi na mile (404)
+                Navigator.pop(context); // Loading hatayein
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementUnavailableScreen()));
+              }
+            } catch (e) {
+              Navigator.pop(context); // Error par bhi loading hatayein
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const RequirementUnavailableScreen()));
+            }
+          } else {
+             Navigator.pop(context);
+          }
+          break;
+          
         case 'NEW_REQUIREMENT':
           if (notification.relatedProjectId != null) {
             try {
